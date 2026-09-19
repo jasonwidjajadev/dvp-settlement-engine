@@ -669,6 +669,135 @@ docker exec -i dvp-postgres psql -U dvp -d dvp < scripts/seed-demo.sql
   - No financial mutation path exists.
 - Stopped here. Section 1.8 was not started.
 
+## 1.8 Testcontainers PostgreSQL integration testing
+
+### 1.8.1 Configure PostgreSQL Testcontainers
+
+- Added reusable test support under `com.jasonwidjaja.dvp.support`.
+  - `PostgresTestDatabase` starts one `org.testcontainers.postgresql.PostgreSQLContainer` for the JVM.
+  - Image: `postgres:18`, same family as local Compose.
+  - The container starts in a static initializer. If Docker is unavailable, class loading fails the tests instead of skipping them.
+  - `AbstractPostgresIntegrationTest` is the shared `@SpringBootTest` base.
+  - `@DynamicPropertySource` sets `spring.datasource.url`, `username`, and `password` from the container.
+  - Precedence is higher than OS environment variables, so a local `.env` pointing at `dvp-postgres` is not used.
+- Did not add `spring-boot-testcontainers` or `@ServiceConnection`.
+  - `DynamicPropertySource` already makes the JDBC settings explicit.
+- Container lifecycle:
+  - started once when the first integration test loads `PostgresTestDatabase`
+  - database name is Testcontainers `test`, not local `dvp`
+  - Ryuk removes the container when the JVM exits
+- Did not enable `disabledWithoutDocker`.
+
+### 1.8.2 Test Spring Boot startup against PostgreSQL
+
+- Added `PostgresStartupIntegrationTest.springStartsAgainstTestcontainersPostgreSQL`.
+  - Scenario: Spring Boot starts against the temporary PostgreSQL container.
+  - Guarantee: the application context and `NamedParameterJdbcTemplate` work without the local `dvp` database.
+  - Result: passed.
+  - JDBC URL was `jdbc:postgresql://localhost:<ephemeral>/test`, not `localhost:5432/dvp`.
+  - `SELECT 1` returned 1.
+  - `SHOW server_version` started with `18` (18.6).
+
+### 1.8.3 Test Flyway migration
+
+- Added `PostgresStartupIntegrationTest.flywayAppliesV1ToCleanTestDatabase`.
+  - Scenario: first connection to an empty Testcontainers database.
+  - Guarantee: the repository can recreate the Phase 1 schema automatically.
+  - Result: passed.
+  - Flyway log: schema empty, then migrated to version 1.
+  - `flyway.validate()` succeeded.
+  - Current migration: `1` / `V1__participants_assets_accounts.sql`.
+  - Public tables: `account`, `asset`, `flyway_schema_history`, `participant`.
+  - No trade, settlement, journal, or reconciliation tables.
+
+### 1.8.4 Test deterministic seed data
+
+- Added `DemoSeed` to apply the real `scripts/seed-demo.sql` through `ResourceDatabasePopulator`.
+  - The seed stays out of Flyway and is not copied into test resources.
+- Added `DemoSeedIntegrationTest.seedIsDeterministicAndSafeToRerun`.
+  - Scenario: apply the seed, change Alice AUD current to 50000, apply the seed again.
+  - Guarantee: deterministic Alice/Bob/AUD/EQ1 rows exist, reruns do not duplicate them, and a changed current balance is not reset.
+  - Result: passed after one assertion fix (below).
+- First `./mvnw verify` failed this test.
+  - Expected 2 participants, found 3.
+  - Cause: constraint tests share the same container and insert a `Constraint` / `C1` fixture.
+  - Fix: assert the deterministic IDs exist exactly once, instead of requiring the tables to contain only seed rows.
+
+### 1.8.5 Test Spring JDBC account reads
+
+- Added `DemoSeedIntegrationTest.accountRepositoryReadsSeededAccounts`.
+  - Scenario: `AccountRepository` reads the seeded accounts from Testcontainers PostgreSQL.
+  - Guarantee: Flyway + seed + Spring JDBC + Java mapping work together.
+  - Result: passed.
+  - Alice AUD 100000/100000, Alice EQ1 0/0, Bob AUD 0/0, Bob EQ1 10/10.
+  - Unknown account ID returned empty.
+
+### 1.8.6 Test database constraints
+
+- Added `DatabaseConstraintIntegrationTest`.
+  - Inserts invalid rows through JDBC so PostgreSQL is tested without application validation.
+  - Each failure is a `DataIntegrityViolationException` whose root `PSQLException` names the constraint.
+
+| Test | Guarantee | Result |
+| --- | --- | --- |
+| duplicate participant/asset account | `account_participant_asset_unique` | passed |
+| negative opening balance | `account_opening_balance_non_negative` | passed |
+| negative current balance | `account_current_balance_non_negative` | passed |
+| unknown participant | `account_participant_fk` | passed |
+| unknown asset | `account_asset_fk` | passed |
+| duplicate asset code | `asset_code_unique` | passed |
+
+- The successful duplicate-account row is deleted after that test so later check-constraint tests still use the same participant/asset pair.
+
+### 1.8.7 Run Maven verification
+
+- Ran `./mvnw verify`.
+  - First run: failed on the exclusive participant count described in 1.8.4.
+  - Second run: `BUILD SUCCESS`.
+  - Tests run: 11. Failures: 0. Errors: 0. Skipped: 0.
+  - `DvpApplicationTests` ran without Docker.
+  - Integration tests started Testcontainers `postgres:18` and Flyway applied V1 to that empty database.
+  - Spring Boot repackaged the executable jar.
+- The older `DVP_VERIFY_JDBC` local checks were not executed. They remain optional and were not counted as skipped.
+
+- Ready for Section 1.9.
+  - Automated Phase 1 tests run against real PostgreSQL 18.
+- Stopped here. Section 1.9 was not started.
+
+### 1.8 correction: isolate test data and pin PostgreSQL 18.6
+
+- Original shared-state problem:
+  - One Testcontainers PostgreSQL instance was reused across integration tests. That remains the intended lifecycle.
+  - `DatabaseConstraintIntegrationTest` inserted a `Constraint` / `C1` fixture and left those rows in the database.
+  - `DemoSeedIntegrationTest` then saw 3 participants instead of the 2 seed rows.
+  - The first 1.8.7 run failed. The follow-up change weakened seed assertions to count deterministic IDs only, so leaked rows no longer failed the test.
+- Isolation approach:
+  - Kept one shared `postgres:18.6` container per JVM, `@DynamicPropertySource`, Flyway V1, and `scripts/seed-demo.sql`.
+  - `AbstractPostgresIntegrationTest` now runs `TRUNCATE TABLE account, participant, asset` before every test.
+  - `flyway_schema_history` is not truncated, so V1 stays applied.
+  - JUnit runs the superclass `@BeforeEach` before subclass fixture inserts, so constraint tests still create `Constraint` / `C1` on an empty data set.
+- Why TRUNCATE:
+  - It is the smallest reset that makes tests order-independent without a new Docker container per test.
+  - A test `@Transactional` rollback would not undo `ResourceDatabasePopulator`, which commits the seed on its own connection.
+  - Exclusive seed counts (2 participants, 2 assets, 4 accounts) and `findAll()` size 4 were restored. They are no longer relaxed to tolerate leaked rows.
+- PostgreSQL image pin:
+  - Testcontainers: `postgres:18` → `postgres:18.6`
+  - `compose.yaml`: `postgres:18` → `postgres:18.6`
+  - Startup test now requires `SHOW server_version` to start with `18.6`.
+- Verification:
+  - `./mvnw verify`
+    - Result: `BUILD SUCCESS`. Tests run: 11. Failures: 0. Errors: 0. Skipped: 0.
+    - Image: `postgres:18.6`. Server: PostgreSQL 18.6.
+    - Flyway applied V1 to an empty schema, then `validate()` succeeded.
+    - Default Surefire order still ran constraint tests before seed tests. Exclusive seed counts passed.
+    - Account reads and all six constraint tests passed.
+  - `./mvnw -Dsurefire.runOrder=reverseAlphabetical test`
+    - Result: passed. Tests run: 11. Skipped: 0.
+    - Seed tests ran before constraint tests. Same assertions still passed.
+
+- Ready for Section 1.9.
+- Stopped here. Section 1.9 was not started.
+
 
 
 
