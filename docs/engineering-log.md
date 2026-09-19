@@ -1036,6 +1036,128 @@ C4 — durable command-result policy:
 - Ready for Section 2.3.
 - Stopped here. Section 2.3 was not started.
 
+## 2.3 Flyway V2 Trade Capture schema
+
+### 2.3.1 Create Flyway V2
+
+- Added `src/main/resources/db/migration/V2__trades_and_command_results.sql`.
+  - Purpose: add the durable PostgreSQL structures required for Trade Capture.
+  - Creates `trade` and `command_result` only.
+- `V1__participants_assets_accounts.sql` was not edited.
+
+### 2.3.2 Create the trade table
+
+- Table: `trade`
+  - `id UUID PRIMARY KEY`
+  - `external_trade_id TEXT NOT NULL` with `trade_external_trade_id_unique`
+  - `buyer_id` / `seller_id` reference `participant(id)`
+  - `security_id` references `asset(id)`
+  - `quantity BIGINT NOT NULL` with `trade_quantity_positive` (`> 0`)
+  - `cash_amount BIGINT NOT NULL` with `trade_cash_amount_positive` (`> 0`)
+  - `settlement_date DATE NOT NULL`
+  - `status TEXT NOT NULL` with `trade_status_supported` (`READY` only)
+  - `trade_buyer_not_seller` rejects buyer = seller
+- Encoded approved C1 at the database as `trade_external_trade_id_format`:
+  - length 1–128
+  - value equals `btrim(value)`, so leading or trailing ordinary space is rejected
+- No journal, posting, settlement-attempt, or `SETTLED` columns.
+- Security type (`CASH` vs `SECURITY`) is not constrained here. That remains an application check for Section 2.4 / 2.5.
+
+### 2.3.3 Create the command-result table
+
+- Table: `command_result`
+  - `command_key TEXT PRIMARY KEY` — one global command-key namespace (C3)
+  - `operation TEXT NOT NULL` restricted to `CAPTURE_TRADE`
+  - `request_identity TEXT NOT NULL` — stores the parsed request identity, not raw JSON bytes
+  - `http_status INTEGER`
+  - `response_body TEXT`
+  - `location TEXT`
+- Encoded approved C3 key format as `command_result_key_format` (1–128 characters, `btrim` for surrounding space).
+- `command_result_completion_state` allows only:
+  - an unfinished claim: status, body, and location all null
+  - a completed result: status and body present; location may be null for a business rejection
+- No foreign key to `trade`. A `422` rejection can be stored without a trade row.
+- Added trigger `command_result_completed_immutable`.
+  - An unfinished claim can be finalized by `UPDATE`.
+  - A completed result cannot be overwritten.
+  - The plan required this guarantee in 2.3.3. Phase 1 had no triggers, so this is the mechanism used here.
+
+### 2.3.4 Verify V2 and preserve Phase 1 state
+
+- Updated `PostgresStartupIntegrationTest.flywayAppliesV1AndV2ToCleanTestDatabase`.
+  - Current version is `2` / `V2__trades_and_command_results.sql`.
+  - Applied scripts: V1 then V2.
+  - Public tables: `account`, `asset`, `command_result`, `flyway_schema_history`, `participant`, `trade`.
+  - No settlement, journal, or reconciliation tables.
+- Extended `AbstractPostgresIntegrationTest` cleanup to `TRUNCATE TABLE command_result, trade, account, participant, asset`.
+  - `flyway_schema_history` is still not truncated.
+- Added `TradeCaptureSchemaIntegrationTest` against Testcontainers PostgreSQL 18.6.
+- Added `FlywayV2UpgradeIntegrationTest`.
+  - Uses the shared `postgres:18.6` container and a separate database `dvp_v1_to_v2`.
+  - Applies V1 only, loads `scripts/seed-demo.sql`, then applies V2.
+  - Alice/Bob IDs, asset codes, and account balances stay unchanged.
+  - `trade` and `command_result` start empty.
+
+Constraint verification:
+
+| Test | Guarantee | Result |
+| --- | --- | --- |
+| valid trade insert | accepted `READY` row | passed after two test fixes |
+| duplicate external reference | `trade_external_trade_id_unique` | passed |
+| unknown buyer/seller/security | `trade_buyer_fk` / `trade_seller_fk` / `trade_security_fk` | passed |
+| self-trade | `trade_buyer_not_seller` | passed |
+| zero/negative quantity | `trade_quantity_positive` | passed |
+| zero/negative cash amount | `trade_cash_amount_positive` | passed |
+| unsupported status `SETTLED` | `trade_status_supported` | passed |
+| surrounding whitespace on external id | `trade_external_trade_id_format` | passed |
+| valid completed command result | stored | passed |
+| duplicate command key | `command_result_pkey` | passed |
+| invalid partial result | `command_result_completion_state` | passed |
+| business rejection without a trade | stored, trade count 0 | passed |
+| unfinished claim finalized | `UPDATE` of null result fields | passed |
+| completed result overwrite | `command_result_completed_immutable` | passed |
+| V1 → V2 upgrade | Phase 1 seed unchanged, new tables empty | passed |
+
+Failures encountered:
+
+- First `validTradeRowCanBeInserted` used UUID text `00000000-0000-0000-0000-00000000t001`.
+  - Cause: `t` is not a hex digit.
+  - Fix: use `00000000-0000-0000-0000-000000000101`.
+- Second run compared `settlement_date` to `LocalDate`.
+  - Cause: `queryForMap` returns `java.sql.Date`.
+  - Fix: convert with `toLocalDate()` before asserting.
+
+- Ran `./mvnw verify`.
+  - First two runs failed on the test issues above.
+  - Third run: `BUILD SUCCESS`.
+  - Tests run: 47. Failures: 0. Errors: 0. Skipped: 0.
+  - Phase 1 tests still pass.
+  - Flyway applies V1 then V2 on a clean Testcontainers database.
+
+- No Trade Capture repositories, services, or HTTP controllers were added.
+- Ready for Section 2.4.
+- Stopped here. Section 2.4 was not started.
+
+### 2.3 correction: match Java surrounding-whitespace rule
+
+- Compared `@NoSurroundingWhitespace` (`value.equals(value.strip())`) with the first V2 format checks (`value = btrim(value)`).
+  - Java `String.strip()` uses `Character.isWhitespace`, so a leading or trailing tab, newline, CR, or other Java whitespace is rejected.
+  - PostgreSQL `btrim()` with no second argument removes only ordinary space (`U+0020`). A leading tab or newline would have been accepted.
+- Edited `V2__trades_and_command_results.sql` in place because Section 2.3 was not closed. No V3 was added.
+- Added SQL function `no_surrounding_whitespace` that rejects the same first/last characters as Java `strip()` / `Character.isWhitespace`.
+  - Both `trade_external_trade_id_format` and `command_result_key_format` now call that function.
+  - `command_result_request_identity_not_blank` still uses `btrim`. That constraint is only "not blank", not the C1/C3 surrounding-whitespace rule.
+- Extended schema tests:
+  - `surroundingWhitespaceOnExternalTradeIdIsRejected` now covers space, tab, newline, CR, and ideographic space (`U+3000`).
+  - Added `surroundingWhitespaceOnCommandKeyIsRejected` with the same cases.
+- Ran `TradeCaptureSchemaIntegrationTest`, `FlywayV2UpgradeIntegrationTest`, and `PostgresStartupIntegrationTest`.
+  - Result: passed. 22 tests.
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 48. Failures: 0. Errors: 0. Skipped: 0.
+- Still no Trade Capture repositories, services, or HTTP controllers.
+- Stopped here. Section 2.4 was not started.
+
 
 
 

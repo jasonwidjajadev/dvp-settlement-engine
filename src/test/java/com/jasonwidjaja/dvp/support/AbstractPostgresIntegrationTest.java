@@ -22,6 +22,6 @@ public abstract class AbstractPostgresIntegrationTest {
 
     @BeforeEach
     void clearApplicationTables() {
-        jdbc.update("TRUNCATE TABLE account, participant, asset", Map.of());
+        jdbc.update("TRUNCATE TABLE command_result, trade, account, participant, asset", Map.of());
     }
 }
