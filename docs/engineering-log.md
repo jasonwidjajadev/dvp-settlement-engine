@@ -520,6 +520,76 @@ This file records what actually happened during implementation. It uses the same
   - Migration is repeatable.
 - Stopped here. Section 1.6 was not started.
 
+## 1.6 Deterministic demo data
+
+### 1.6.1 Create the seed mechanism
+
+- Added `scripts/seed-demo.sql`.
+  - Canonical seed for local development and demos.
+  - Kept out of `src/main/resources/db/migration/` so Flyway V1 still creates structure only.
+  - Not referenced by `application.yml`, so the application does not seed on startup.
+- Invocation:
+
+```bash
+docker exec -i dvp-postgres psql -U dvp -d dvp < scripts/seed-demo.sql
+```
+
+- Chose a standalone SQL file rather than a Java CommandLineRunner or a Flyway repeatable migration.
+  - It matches the Phase 1 plan.
+  - It can be run only when a demo database is wanted.
+  - PostgreSQL `ON CONFLICT` can make reruns non-destructive without application code.
+
+### 1.6.2 Seed participants
+
+- Inserted deterministic participants:
+  - Alice `00000000-0000-0000-0000-000000000001`
+  - Bob `00000000-0000-0000-0000-000000000002`
+- Fixed UUIDs so later tests and demo scripts can refer to the same rows.
+- `ON CONFLICT (id) DO NOTHING` skips Alice/Bob if they already exist.
+
+### 1.6.3 Seed assets
+
+- Inserted deterministic assets:
+  - AUD `00000000-0000-0000-0000-0000000000a1`, type `CASH`
+  - EQ1 `00000000-0000-0000-0000-0000000000e1`, type `SECURITY`
+- AUD is Alice's cash for the later AUD 500 purchase.
+- EQ1 is Bob's security inventory of 10 units.
+- `ON CONFLICT (id) DO NOTHING` skips existing assets.
+
+### 1.6.4 Seed accounts
+
+- Inserted the four starting accounts:
+
+| Account | ID | Opening | Current |
+| --- | --- | ---: | ---: |
+| Alice AUD | `00000000-0000-0000-0000-0000000000aa` | 100000 | 100000 |
+| Alice EQ1 | `00000000-0000-0000-0000-0000000000ae` | 0 | 0 |
+| Bob AUD | `00000000-0000-0000-0000-0000000000ba` | 0 | 0 |
+| Bob EQ1 | `00000000-0000-0000-0000-0000000000be` | 10 | 10 |
+
+- These values are the later example starting point: Alice has AUD 1,000 and no EQ1; Bob has 10 EQ1 and no cash.
+- `ON CONFLICT (participant_id, asset_id) DO NOTHING` so a rerun cannot create a second pair or overwrite balances.
+
+### 1.6.5 Make seeding safe to repeat
+
+- Verified against PostgreSQL 18.6 (`postgres:18`).
+- First run inserted 2 participants, 2 assets, and 4 accounts.
+- Second run reported `INSERT 0 0` for all three statements.
+  - Counts remained 2 / 2 / 4.
+  - Opening balances were unchanged.
+- Changed Alice AUD `current_balance` to `50000` as a disposable test.
+- Third run still reported `INSERT 0 0`.
+  - Alice AUD remained `opening 100000`, `current 50000`.
+  - The seed did not reset the changed current balance.
+- Restored Alice AUD `current_balance` to `100000` after that check so the local database is back to the canonical demo state.
+- No trade or other Phase 2 tables were created.
+
+- Ready for Section 1.7.
+  - Alice/Bob/AUD/EQ1 data exists.
+  - Seed is repeatable and non-destructive.
+- Stopped here. Section 1.7 was not started.
+
+
 
 
 
