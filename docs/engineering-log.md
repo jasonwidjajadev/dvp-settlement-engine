@@ -798,6 +798,102 @@ docker exec -i dvp-postgres psql -U dvp -d dvp < scripts/seed-demo.sql
 - Ready for Section 1.9.
 - Stopped here. Section 1.9 was not started.
 
+## 1.9 Phase 1 verification
+
+Purpose: confirm the Phase 1 foundation before any trade logic. No product features were added during this review.
+
+### 1.9.1 Run the complete build and test suite
+
+- Ran `./mvnw clean verify` from a deleted `target/` directory.
+  - Java: Temurin 21.0.3, `JAVA_HOME` = `/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home`
+  - Maven Wrapper: 3.9.11
+  - Result: `BUILD SUCCESS`
+  - Tests run: 11. Failures: 0. Errors: 0. Skipped: 0.
+  - Testcontainers image: `postgres:18.6`
+  - Flyway: empty schema, then `Successfully applied 1 migration ... now at version v1`
+  - Server: PostgreSQL 18.6
+  - Spring Boot repackaged the executable jar
+
+```text
+Java 21                    PASS
+Maven Wrapper              PASS
+Spring Boot startup        PASS
+PostgreSQL connection      PASS
+Flyway V1                  PASS
+Participant table          PASS
+Asset table                PASS
+Account table              PASS
+Seed data                  PASS
+Spring JDBC account read   PASS
+Testcontainers             PASS
+Database constraints       PASS
+Maven verify               PASS
+```
+
+### 1.9.2 Review the repository
+
+- `git status`: working tree was clean before this 1.9 log update. Branch `main`.
+- Tracked application Java is only:
+  - `DvpApplication.java`
+  - `domain/{Participant,Asset,AssetType,Account}.java`
+  - `persistence/AccountRepository.java` with `findAll` and `findById` only
+- No REST controllers, trade/settlement/journal classes, or write APIs.
+- `.gitignore` ignores `target/`, `.env`, `.env.*`, and `.DS_Store`. `!.env.example` is kept.
+- `git check-ignore` confirms `.env` and `target/` are ignored. `git ls-files` does not contain `.env` or `target/`.
+- `.env.example` is tracked and contains placeholders only (`change-me`), not the local password.
+- `pom.xml` dependencies stay within the approved stack: Spring Web MVC, JDBC, validation, PostgreSQL driver, Flyway, JUnit/AssertJ via `spring-boot-starter-test`, Testcontainers PostgreSQL.
+- Confirmed absent: JPA, Hibernate ORM, H2, Kafka, frontend, microservices.
+- Hibernate Validator remains only as the Bean Validation implementation from `spring-boot-starter-validation`.
+- No empty future packages such as `api`, `service`, `trade`, or `settlement`.
+
+### 1.9.3 Review the engineering log
+
+- Present: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, plus the 1.4 PostgreSQL 18 correction and the 1.8 isolation/image-pin correction.
+- Failures kept in history include:
+  - 1.2 `verify` missing main class
+  - 1.3 default `spring-boot:run` without a DataSource
+  - 1.5 Flyway not applying until `spring-boot-starter-flyway`
+  - 1.7 `@ConditionalOnBean` skipping `AccountRepository`
+  - 1.8 leaked constraint-fixture rows weakening seed assertions
+- This section is the Phase 1 final verification result.
+
+### 1.9.4 Review the final repository structure
+
+Actual shape matches the plan, with these justified differences:
+
+- Production packages are `domain` and `persistence`, not `account/`.
+  - Domain types are financial concepts, not JDBC types.
+  - `AccountRepository` is the JDBC persistence module needed in Phase 1 (ADR-004).
+- `compose.yaml` exists for local PostgreSQL 18.6. The plan allows this.
+- Extra documentation already in the repository: `README.md`, `docs/detailed-plan/phase-1-diagram.md`.
+- Test support lives under `src/test/java/com/jasonwidjaja/dvp/support/`.
+- Optional local JDBC checks remain: `JdbcConnectionVerification` and `AccountReadVerification`, gated by `DVP_VERIFY_JDBC=true`. They are not required by `./mvnw clean verify` and were not skipped there.
+
+### 1.9.5 Confirm Phase 1 exit criteria
+
+- Java 21 is configured and working.
+- Maven Wrapper works.
+- Spring Boot application starts.
+- PostgreSQL runs and accepts connections.
+- Spring Boot connects to PostgreSQL.
+- Flyway creates V1 successfully.
+- `participant`, `asset`, and `account` tables exist.
+- Database constraints reject invalid account state.
+- Deterministic Alice/Bob seed data works.
+- Seed reruns do not reset financial state.
+- Spring JDBC reads account data correctly.
+- Testcontainers runs integration tests against real PostgreSQL 18.6.
+- `./mvnw clean verify` passes.
+- No secrets or generated build output are committed.
+- This engineering log describes the implementation, including failed attempts and corrections.
+
+Phase 1 is complete.
+
+- Did not implement Trade Capture.
+- Did not create `docs/detailed-plan/phase-2.md`.
+- Stopped here.
+
+
 
 
 
