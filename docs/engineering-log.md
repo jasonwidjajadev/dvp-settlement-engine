@@ -589,6 +589,86 @@ docker exec -i dvp-postgres psql -U dvp -d dvp < scripts/seed-demo.sql
   - Seed is repeatable and non-destructive.
 - Stopped here. Section 1.7 was not started.
 
+## 1.7 Spring JDBC account read
+
+### 1.7.1 Create the Phase 1 domain records
+
+- Added Java records and an enum under `com.jasonwidjaja.dvp.domain`.
+  - These packages were created now because Section 1.7 needs typed row mappings. Empty future packages were not added.
+- `Participant`
+  - Represents a simulated trading party such as Alice or Bob.
+  - Fields: `id` (`UUID`), `name`.
+- `AssetType`
+  - Enum: `CASH`, `SECURITY`.
+  - Matches the V1 `asset_type_supported` values.
+- `Asset`
+  - Represents AUD cash or a fictional security such as EQ1.
+  - Fields: `id` (`UUID`), `code`, `type` (`AssetType`).
+- `Account`
+  - Represents one participant's holdings of one asset.
+  - Fields: `id`, nested `participant`, nested `asset`, `openingBalance`, `currentBalance`.
+  - Balances are `long` to match PostgreSQL `BIGINT` minor/whole units from Section 1.5.2.
+- No JPA/Hibernate annotations.
+- No settlement behaviour, locking, or mutation methods.
+- Ran `./mvnw compile`.
+  - Purpose: confirm the domain types compile on Java 21.
+  - Result: passed.
+
+### 1.7.2 Create `AccountRepository`
+
+- Added `com.jasonwidjaja.dvp.persistence.AccountRepository`.
+  - Persistence package exists because this phase needs JDBC access for accounts.
+  - `@Repository` with constructor injection of `NamedParameterJdbcTemplate`.
+- `NamedParameterJdbcTemplate` is used so SQL stays explicit and parameters are bound by name, for example `:accountId`, instead of string concatenation.
+- First attempt annotated the scanned repository with `@ConditionalOnBean(DataSource.class)` so the existing no-database context test would still start.
+  - Result: failed during 1.7.4.
+  - Cause: `@ConditionalOnBean` on a component-scanned class is evaluated before the DataSource bean exists, so Spring skipped `AccountRepository` even when PostgreSQL was connected.
+  - Fix: removed the condition. The repository is always a Spring bean.
+  - `DvpApplicationTests` now registers a `@MockitoBean NamedParameterJdbcTemplate` so the DataSource-excluded context can still construct the repository.
+
+### 1.7.3 Implement account reads
+
+- Added two SELECT-only methods:
+  - `findAll()` — every account joined to its participant and asset, ordered by `account.id`.
+  - `findById(UUID)` — the same columns for one account, returning `Optional.empty()` when no row exists.
+- Selected columns are explicit:
+  - `account.id`, `opening_balance`, `current_balance`
+  - `participant.id`, `participant.name`
+  - `asset.id`, `asset.code`, `asset.type`
+- Mapping:
+  - `participant_id` / `participant_name` → `Participant`
+  - `asset_id` / `asset_code` / `asset_type` → `Asset` / `AssetType.valueOf`
+  - `account_id` / balances → `Account`
+- Did not add create, update, balance-modification, locking, or settlement methods.
+
+### 1.7.4 Verify account reads
+
+- Added `AccountReadVerification`, gated by `DVP_VERIFY_JDBC=true`.
+  - Uses the local seeded PostgreSQL database.
+  - Does not start Testcontainers. That belongs to Section 1.8.
+- Ran `./mvnw test`.
+  - Purpose: confirm the no-database context test still passes.
+  - Result: passed. Tests run: 1.
+- Ran `./mvnw -Dtest=AccountReadVerification test` with `.env` exported and `DVP_VERIFY_JDBC=true`.
+  - Purpose: read the deterministic demo accounts through Spring JDBC.
+  - PostgreSQL: 18.6, Flyway schema still version 1, no new migration.
+  - First gated run failed: `AccountRepository` bean missing because of the `@ConditionalOnBean` issue above.
+  - After removing the condition, the same command passed.
+- Assertions that passed:
+  - Alice AUD: opening 100000, current 100000, participant Alice, asset AUD/`CASH`
+  - Alice EQ1: opening 0, current 0, asset EQ1/`SECURITY`
+  - Bob AUD: opening 0, current 0, participant Bob, asset AUD/`CASH`
+  - Bob EQ1: opening 10, current 10, asset EQ1/`SECURITY`
+  - `findAll()` returned those four IDs
+  - unknown account ID returned empty
+  - opening/current balances and participant/asset/account counts were unchanged after the reads
+
+- Ready for Section 1.8.
+  - Spring JDBC reads real PostgreSQL data.
+  - Java mappings match the seed.
+  - No financial mutation path exists.
+- Stopped here. Section 1.8 was not started.
+
 
 
 

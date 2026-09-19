@@ -1,68 +1,53 @@
+# Diagram 
 
-Java 21
-→ language/version
+- Java 21 → language/version
+- Temurin OpenJDK JDK → provides the Java compiler and runtime
+- JAVA_HOME → tells tools which JDK to use
+- Maven → builds the project and manages libraries
+- pom.xml → tells Maven what this project needs
+- Spring Boot → framework that runs your backend
+- Spring JDBC → lets your Java application execute SQL
+- PostgreSQL JDBC Driver → actual bridge between Java and PostgreSQL
+- PostgreSQL → durable source of truth
+- Flyway → creates/version-controls PostgreSQL structure
+- seed-demo.sql → creates known example data
+- AccountRepository → Java code that reads the database
+- Testcontainers → starts disposable real PostgreSQL for tests
+- ./mvnw verify → puts the whole Phase 1 stack through automated verification
 
-Temurin OpenJDK JDK
-→ provides the Java compiler and runtime
 
-JAVA_HOME
-→ tells tools which JDK to use
+## Phase 1 FOUNDATION
 
-Maven
-→ builds the project and manages libraries
+- 1.1 repo setup  → no app logic
+- 1.2 Java + Maven exist → no app logic → ./mvnw -v
+- 1.3 actual Java application exists → only application startup
+    - → ./mvnw compile
+    - → ./mvnw verify
 
-pom.xml
-→ tells Maven what this project needs
+- 1.4 → infrastructure/configuration, database configuration exists
+    - → ./mvnw spring-boot:run
+    - → Spring starts normally and connects to PostgreSQL
 
-Spring Boot
-→ framework that runs your backend
+- 1.5 Flyway schema → database structure
+- 1.6 seed data → example database rows
+- 1.7 Spring JDBC → FIRST real Java data-access logic
+       - Account.java
+       - Participant.java
+       - Asset.java
+       - AccountRepository.java
+       - SELECT accounts from PostgreSQL
+       - map database rows → Java objects
 
-Spring JDBC
-→ lets your Java application execute SQL
+- 1.8 tests → verify the above
+- 1.9 final Phase 1 verification
 
-PostgreSQL JDBC Driver
-→ actual bridge between Java and PostgreSQL
+- later, Phase 2 first real REST endpoint exists
+    - → curl endpoint
+    - → receive actual application response
 
-PostgreSQL
-→ durable source of truth
+   
 
-Flyway
-→ creates/version-controls PostgreSQL structure
-
-seed-demo.sql
-→ creates known example data
-
-AccountRepository
-→ Java code that reads the database
-
-Testcontainers
-→ starts disposable real PostgreSQL for tests
-
-./mvnw verify
-→ puts the whole Phase 1 stack through automated verification
-
----
-
-1.2
-Java + Maven exist
-→ ./mvnw -v
-
-1.3
-actual Java application exists
-→ ./mvnw compile
-→ ./mvnw verify
-
-1.4
-database configuration exists
-→ ./mvnw spring-boot:run
-→ Spring starts normally and connects to PostgreSQL
-
-later, Phase 2
-first real REST endpoint exists
-→ curl endpoint
-→ receive actual application response
-
----
+```txt
 
 PHASE 1: JAVA + POSTGRESQL FOUNDATION
 ================================================================================
@@ -1193,3 +1178,4 @@ There is still NO:
     Reconciliation
 
 Those come in later phases.
+```

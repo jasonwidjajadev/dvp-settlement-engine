@@ -4,7 +4,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.jasonwidjaja.dvp.persistence.AccountRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,6 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 class DvpApplicationTests {
 
+    @MockitoBean
+    private NamedParameterJdbcTemplate jdbc;
+
     @Autowired
     private ApplicationContext applicationContext;
 
@@ -22,6 +29,7 @@ class DvpApplicationTests {
     void contextLoads() {
         assertThat(applicationContext).isNotNull();
         assertThat(applicationContext.getBean(DvpApplication.class)).isNotNull();
+        assertThat(applicationContext.getBean(AccountRepository.class)).isNotNull();
         assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class)).isEmpty();
     }
 }
