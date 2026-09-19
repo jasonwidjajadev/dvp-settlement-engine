@@ -985,6 +985,57 @@ C4 — durable command-result policy:
 - No application code or Flyway migration was added.
 - Stopped here. Section 2.2 was not started.
 
+## 2.2 Trade domain and API types
+
+### 2.2.1 Create the Trade domain records
+
+- Added immutable records and enum in `com.jasonwidjaja.dvp.domain`.
+- `TradeTerms` — accepted economic fact: `externalTradeId`, `buyerId`, `sellerId`, `securityId`, `quantity`, `cashAmount`, `settlementDate`.
+  - Identifiers are `UUID`. Quantity and cash are `long`. Settlement date is `LocalDate`.
+- `TradeStatus` — Phase 2 value `READY` only. `SETTLED` was not added.
+- `Trade` — internal `id`, `TradeTerms`, and `status`.
+- No setters, settlement methods, journal fields, balance mutation, or locking.
+
+### 2.2.2 Create `CaptureCommand`
+
+- Added `CaptureCommand` with `idempotencyKey` and `TradeTerms`.
+- The key is not part of `TradeTerms`, so two keys can name the same business trade.
+
+### 2.2.3 Create the HTTP DTOs
+
+- Added `com.jasonwidjaja.dvp.api` because HTTP representations are needed now.
+- `CaptureTradeRequest` — `POST /v1/trades` body. Field names match the approved JSON contract.
+- `TradeResponse` — `POST /v1/trades` and `GET /v1/trades/{id}` body. Includes `id`, terms, and `status`.
+- `AccountResponse` — `GET /v1/accounts` body. Maps the Phase 1 `Account` (participant id/name, asset id/code/type, opening and current balances).
+- `ErrorResponse` — `code` and `message`.
+- No REST controllers were added.
+
+### 2.2.4 Configure request validation
+
+- Bean Validation on `CaptureTradeRequest`:
+  - `externalTradeId`: `@NotNull`, length 1–128, `@NoSurroundingWhitespace` (C1: reject leading/trailing whitespace, do not trim)
+  - `buyerId`, `sellerId`, `securityId`: `@NotNull` UUIDs
+  - `quantity` and `cashAmount`: nullable `Long` with `@NotNull` and `@Positive` so missing is distinct from zero
+  - `settlementDate`: `@NotNull` `LocalDate`
+- Reference-data checks (participant exists, self-trade) stay out of the DTO.
+- Jackson rejects float-to-int coercion and string-to-integer coercion so `"10"` and `10.5` are structural errors.
+  - `application.yml`: `spring.jackson.deserialization.accept-float-as-int=false`
+  - `JacksonConfiguration` applies the same rules through `JsonMapping`.
+- Tests:
+  - `TradeDomainTest` — terms, `READY` only, command key separate from terms
+  - `CaptureTradeRequestValidationTest` — missing/blank/whitespace/length/zero/negative/null cases; self-trade is still structurally valid
+  - `CaptureTradeRequestJsonTest` — approved JSON decode, property-order independence, missing quantity is null, reject malformed/invalid UUID/date/fraction/string numbers, response field names
+  - `AccountResponseTest` — Phase 1 account mapping
+- First JSON test used `@SpringBootTest` and `@MockitoBean`. In the sandbox that failed to attach Mockito's mock maker. The test was rewritten as a unit test using the same `JsonMapping` rules, without a Spring context.
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 28. Failures: 0. Errors: 0. Skipped: 0.
+  - Flyway still applied only V1. No V2 migration exists.
+
+- Ready for Section 2.3.
+- Stopped here. Section 2.3 was not started.
+
 
 
 

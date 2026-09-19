@@ -8,3 +8,6 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  jackson:
+    deserialization:
+      accept-float-as-int: false
