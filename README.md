@@ -1,6 +1,74 @@
 # dvp-settlement-engine
 Java/Spring Boot backend that simulates Delivery-versus-Payment trade settlement, safe retries, concurrency control, and reconciliation against external records.
 
+## Local development
+
+### Prerequisites
+
+- Java 21
+- Docker Desktop
+
+### Setup
+
+1. Clone the repository.
+
+2. Create your local environment file:
+
+```bash
+cp .env.example .env
+```
+
+3. Update `.env` with your local database credentials if needed.
+
+4. Start PostgreSQL:
+
+```bash
+docker compose --env-file .env up -d
+```
+
+5. Export the environment variables:
+
+```bash
+set -a
+source .env
+set +a
+```
+
+### Run the application
+
+Start the Spring Boot application:
+
+```bash
+./mvnw spring-boot:run
+```
+
+Stop it with:
+
+```text
+Ctrl+C
+```
+
+### Run the tests
+
+Run the full test suite:
+
+```bash
+./mvnw clean verify
+```
+
+### Environment files
+
+- `.env.example`
+  - committed to Git
+  - documents the required environment variables
+  - contains placeholder values only
+
+- `.env`
+  - local to each developer
+  - contains actual local credentials
+  - must not be committed
+
+## Architecture
 ```txt
 DVP SETTLEMENT ENGINE
 ================================================================================
@@ -147,12 +215,8 @@ Example:
 
 
 Simple distinction:
-
-    Flyway
-    → creates the shelves
-
-    Spring JDBC
-    → reads and changes the things stored on the shelves
+- Flyway → creates the shelves
+- Spring JDBC → reads and changes the things stored on the shelves
 
 
 DATABASE EVOLUTION

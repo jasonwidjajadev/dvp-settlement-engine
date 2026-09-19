@@ -893,6 +893,98 @@ Phase 1 is complete.
 - Did not create `docs/detailed-plan/phase-2.md`.
 - Stopped here.
 
+## 2.1 Confirm Phase 1 and approve the Trade Capture contract
+
+### 2.1.1 Inspect the completed Phase 1 repository
+
+- Inspected the repository before any Phase 2 application code.
+  - Production Java remains Phase 1 only:
+    - `DvpApplication.java`
+    - `domain/{Participant,Asset,AssetType,Account}.java`
+    - `persistence/AccountRepository.java` (`findAll`, `findById`)
+  - Flyway still has only `V1__participants_assets_accounts.sql`.
+  - No `V2` migration.
+  - No trade, command, or REST controller classes.
+  - Test support still uses one shared `postgres:18.6` Testcontainer, `@DynamicPropertySource`, `TRUNCATE TABLE account, participant, asset` before each test, and `DemoSeed` for `scripts/seed-demo.sql`.
+- `git status` before this log update:
+  - Branch `main`, up to date with `origin/main`.
+  - Modified: `README.md` (existing documentation work; left untouched).
+  - Untracked planning files: `docs/detailed-plan/phase-2.md`, `docs/detailed-plan/phase-2-implementation-explanation.md`.
+  - No Trade Capture implementation to overwrite.
+- Read `docs/project-spec.md`, `docs/decisions.md`, `docs/implementation-plan.md`, `docs/detailed-plan/phase-1.md`, `docs/detailed-plan/phase-2.md`, and this engineering log.
+- Difference from the 1.9 close-out note:
+  - 1.9 recorded that `docs/detailed-plan/phase-2.md` did not exist yet.
+  - It now exists as the approved Phase 2 plan. That is planning, not application code.
+- Ran `./mvnw verify`.
+  - Purpose: confirm the Phase 1 suite still passes before Phase 2 implementation.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 11. Failures: 0. Errors: 0. Skipped: 0.
+  - Testcontainers: `postgres:18.6`.
+  - Flyway applied V1 to an empty test schema.
+
+### 2.1.2 Approve the trade terms and business identity
+
+- Inspected C1 and C5 against the current repository and documents.
+- First presented the Phase 2 proposals for human review. They were not encoded in Java or migrations at that point.
+- Human approval recorded the following final rules.
+
+C1 — captured trade values:
+
+- `quantity > 0`
+- `cashAmount > 0`
+- Zero-value trades are rejected.
+- Both values must fit Java `long` / PostgreSQL `BIGINT`.
+- AUD remains integer minor units. Securities remain whole units. This continues the Phase 1 numeric representation.
+- `externalTradeId` is 1–128 characters, non-blank, and case-sensitive.
+- Leading or trailing whitespace is rejected. The value is not silently trimmed.
+- The accepted reference is stored exactly as supplied.
+
+C5 — repeated trade identity:
+
+- A new command key with the same external trade reference and identical immutable terms returns the existing trade. A second trade row is not created.
+- That path returns `200 OK`.
+- The same reference with different immutable terms returns `409 Conflict` and never overwrites the original trade.
+
+- Change from the original Phase 2 C1 proposal: whitespace on `externalTradeId` is an error, not a silent trim.
+
+### 2.1.3 Approve idempotency and durable command outcomes
+
+- Inspected C3 and C4 against the spec, ADR-009, and `docs/detailed-plan/phase-2.md`.
+- First presented the Phase 2 proposals for human review. They were not encoded in Java or migrations at that point.
+- Human approval recorded the following final rules.
+
+C3 — idempotency-key scope:
+
+- Exactly one `Idempotency-Key` HTTP header.
+- The key is 1–128 characters, non-blank, and case-sensitive.
+- Leading or trailing whitespace is rejected. The key is not silently trimmed.
+- One global command-key namespace for this project.
+- Request identity is operation `CAPTURE_TRADE` plus all parsed trade terms: external trade reference, buyer, seller, security, quantity, cash amount, settlement date.
+- JSON whitespace and property order do not change request identity.
+
+C4 — durable command-result policy:
+
+| Situation | Result | Durable |
+| --- | --- | --- |
+| New valid capture | `201 Created` | yes |
+| Same key + same request | replay original outcome | already stored |
+| Same key + changed request | `409 Conflict` | original unchanged |
+| New key + same trade + same terms | `200 OK` | yes |
+| New key + same reference + different terms | `409 Conflict` | yes |
+| Business validation failure (unknown participant/security or self-trade) | `422 Unprocessable Content` | yes |
+| Malformed or structurally invalid request, or invalid key | `400 Bad Request` | no |
+| Unsupported media type | `415 Unsupported Media Type` | no |
+| Unexpected technical failure before commit | `500 Internal Server Error` | no committed capture result |
+| Unknown trade on GET | `404 Not Found` | read only |
+
+- Error bodies use `code` and `message`.
+- Change from the original Phase 2 C3 proposal: whitespace on `Idempotency-Key` is an error, not a silent trim.
+
+- Section 2.1 is complete.
+- C1, C3, C4 and C5 are approved.
+- No application code or Flyway migration was added.
+- Stopped here. Section 2.2 was not started.
+
 
 
 
