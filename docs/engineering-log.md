@@ -1158,6 +1158,76 @@ Failures encountered:
 - Still no Trade Capture repositories, services, or HTTP controllers.
 - Stopped here. Section 2.4 was not started.
 
+## 2.4 Spring JDBC Trade Capture persistence
+
+### 2.4.1 Create participant and asset lookup repositories
+
+- Added `ParticipantRepository`.
+  - `existsById(UUID)` — `SELECT id FROM participant WHERE id = :participantId`
+  - Missing participant is `false`, not an exception.
+- Added `AssetRepository`.
+  - `findById(UUID)` — `SELECT id, code, type FROM asset WHERE id = :assetId`
+  - Returns `Optional` so AUD can be distinguished from a missing asset and from EQ1 (`SECURITY`).
+- Reused the Phase 1 `Participant`, `Asset`, and `AssetType` records.
+- Both repositories use `NamedParameterJdbcTemplate` and explicit selected columns.
+
+### 2.4.2 Create `TradeRepository`
+
+- Added `TradeRepository`.
+  - `findById(UUID)`
+  - `findByExternalTradeId(String)`
+  - `insertIfAbsent(TradeTerms)` generates a UUID, inserts `status = READY`, and uses `ON CONFLICT (external_trade_id) DO NOTHING RETURNING ...`
+- A duplicate external reference returns empty and leaves the original terms unchanged. There is no upsert.
+
+### 2.4.3 Create `CommandResultRepository`
+
+- Added domain types needed to store and compare durable command outcomes:
+  - `CommandResult` — `commandKey`, `operation`, `requestIdentity`, nullable `httpStatus` / `responseBody` / `location`
+  - `CaptureRequestIdentity` — canonical string for C3: `CAPTURE_TRADE` plus the parsed terms in a fixed field order. JSON whitespace and property order never enter this string.
+- Added `CommandResultRepository`.
+  - `claim(commandKey, requestIdentity)` — `INSERT ... ON CONFLICT (command_key) DO NOTHING`. Returns `true` only when this call created the row.
+  - `findByCommandKey` reads the stored identity and, if present, the completed result.
+  - `finalize(...)` updates only `WHERE http_status IS NULL`. A completed row is not replaced.
+- Identity comparison is string equality of `CaptureRequestIdentity.of(terms)` against the stored `request_identity`. A second claim with different terms keeps the original identity.
+
+### 2.4.4 Verify the persistence layer
+
+- Added PostgreSQL 18.6 integration tests on the shared Testcontainers cleanup:
+  - `ReferenceDataRepositoryIntegrationTest` — Alice/Bob exist, unknown participant is false, AUD is `CASH`, EQ1 is `SECURITY`
+  - `TradeRepositoryIntegrationTest` — insert/read round-trip, unknown id empty, duplicate reference does not overwrite
+  - `CommandResultRepositoryIntegrationTest` — claim, duplicate key, finalize, completed overwrite rejected, 422 without location
+  - `CaptureRequestIdentityTest` — same parsed terms share an identity; a changed quantity does not
+- Repositories do not own a Trade Capture transaction. `CaptureTradeService` was not added.
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 63. Failures: 0. Errors: 0. Skipped: 0.
+
+- Ready for Section 2.5.
+- Stopped here. Section 2.5 was not started.
+
+### 2.4 correction: unambiguous identity and exact finalize
+
+- First `CaptureRequestIdentity` encoding joined fields with `|`.
+  - That is delimiter-based. `externalTradeId` may contain `|`, `:`, or `,`.
+  - C3 still holds: identity is `CAPTURE_TRADE` plus the parsed terms, not raw JSON.
+- Replaced the encoding with length-prefixed fields: `<length>:<value>,` for the operation and every term.
+  - A pipe or comma inside `externalTradeId` cannot merge with the next field.
+- `finalize(...)` is now `void`.
+  - It succeeds only when the `UPDATE` affects exactly one unfinished row.
+  - 0 or more than 1 rows throw `IncorrectResultSizeDataAccessException`.
+  - Completing an already completed key, or an unknown key, is an error. The original completed row stays unchanged.
+- Tests:
+  - `CaptureRequestIdentityTest` — pipe-shifted fields, `5:T-001,`, and comma-like references do not collide
+  - `CommandResultRepositoryIntegrationTest` — completed and unknown finalize throw
+  - `CommandResultRepositoryFinalizeTest` — mocked `UPDATE` of 0 or 2 rows throws
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 68. Failures: 0. Errors: 0. Skipped: 0.
+- Still no `CaptureTradeService` or capture HTTP API.
+- Stopped here. Section 2.5 was not started.
+
 
 
 
