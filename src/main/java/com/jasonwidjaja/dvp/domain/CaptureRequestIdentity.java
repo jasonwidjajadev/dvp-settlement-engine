@@ -13,7 +13,7 @@ public final class CaptureRequestIdentity {
      * {@code externalTradeId} cannot merge with an adjacent field.
      */
     public static String of(TradeTerms terms) {
-        return encode(
+        return RequestIdentityEncoding.encode(
                 OPERATION,
                 terms.externalTradeId(),
                 terms.buyerId().toString(),
@@ -22,13 +22,5 @@ public final class CaptureRequestIdentity {
                 Long.toString(terms.quantity()),
                 Long.toString(terms.cashAmount()),
                 terms.settlementDate().toString());
-    }
-
-    private static String encode(String... fields) {
-        StringBuilder identity = new StringBuilder();
-        for (String field : fields) {
-            identity.append(field.length()).append(':').append(field).append(',');
-        }
-        return identity.toString();
     }
 }

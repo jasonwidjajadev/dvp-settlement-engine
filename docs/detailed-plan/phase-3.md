@@ -927,15 +927,15 @@ Create the Java types that represent settlement history, settlement decisions an
 
 ## 3.3.1 Extend the trade domain for the settled state
 
-* [ ] Add `SETTLED` to `TradeStatus`.
+* [x] Add `SETTLED` to `TradeStatus`.
 
-* [ ] Add a nullable `journalId` to `Trade`.
+* [x] Add a nullable `journalId` to `Trade`.
 
-* [ ] Leave `TradeTerms` unchanged.
+* [x] Leave `TradeTerms` unchanged.
 
   * Settlement never alters captured economic terms.
 
-* [ ] Update `TradeRepository` row mapping and every existing construction site.
+* [x] Update `TradeRepository` row mapping and every existing construction site.
 
 Why:
 
@@ -944,9 +944,9 @@ Why:
 
 Verification:
 
-* [ ] Domain types compile.
-* [ ] A `READY` trade maps with a `null` journal id.
-* [ ] Existing Phase 2 tests still pass after the record change.
+* [x] Domain types compile.
+* [x] A `READY` trade maps with a `null` journal id.
+* [x] Existing Phase 2 tests still pass after the record change.
 
 Engineering log:
 
@@ -960,7 +960,7 @@ Ready for 3.3.2 when:
 
 ## 3.3.2 Create the journal and posting domain types
 
-* [ ] Create `SettlementJournal`.
+* [x] Create `SettlementJournal`.
 
 ```text
 id
@@ -968,7 +968,7 @@ tradeId
 settledAt
 ```
 
-* [ ] Create `Posting`.
+* [x] Create `Posting`.
 
 ```text
 id
@@ -979,7 +979,7 @@ amount
 signedAmount
 ```
 
-* [ ] Create `PostingDirection`.
+* [x] Create `PostingDirection`.
 
 ```text
 DEBIT
@@ -988,7 +988,7 @@ CREDIT
 
 * `DEBIT` decreases the account balance. `CREDIT` increases it. These are project-local balance-movement directions, not general-ledger / GAAP debit-credit semantics.
 
-* [ ] Keep the types immutable records with no persistence annotations and no behaviour that mutates balances.
+* [x] Keep the types immutable records with no persistence annotations and no behaviour that mutates balances.
 
 Why:
 
@@ -997,8 +997,8 @@ Why:
 
 Verification:
 
-* [ ] Types compile.
-* [ ] Every approved column is represented.
+* [x] Types compile.
+* [x] Every approved column is represented.
 
 Engineering log:
 
@@ -1012,7 +1012,7 @@ Ready for 3.3.3 when:
 
 ## 3.3.3 Create the settlement attempt and outcome types
 
-* [ ] Create `SettlementOutcome`.
+* [x] Create `SettlementOutcome`.
 
 ```text
 SETTLED
@@ -1022,7 +1022,7 @@ INSUFFICIENT_CASH
 INSUFFICIENT_SECURITIES
 ```
 
-* [ ] Create `SettlementAttempt`.
+* [x] Create `SettlementAttempt`.
 
 ```text
 id
@@ -1034,7 +1034,7 @@ businessDate
 decidedAt
 ```
 
-* [ ] Keep the enum aligned with the database check constraint.
+* [x] Keep the enum aligned with the database check constraint.
 
 Why:
 
@@ -1043,8 +1043,8 @@ Why:
 
 Verification:
 
-* [ ] Types compile.
-* [ ] A small test asserts the enum values match the values accepted by the database.
+* [x] Types compile.
+* [x] A small test asserts the enum values match the values accepted by the database.
 
 Engineering log:
 
@@ -1058,19 +1058,19 @@ Ready for 3.3.4 when:
 
 ## 3.3.4 Create the settlement command and its request identity
 
-* [ ] Create `SettleCommand`.
+* [x] Create `SettleCommand`.
 
 ```text
 idempotencyKey
 tradeId
 ```
 
-* [ ] Create `SettleRequestIdentity`.
+* [x] Create `SettleRequestIdentity`.
 
   * operation `SETTLE_TRADE`
   * the trade id
 
-* [ ] Extract the length-prefixed encoding shared with `CaptureRequestIdentity` into one internal helper.
+* [x] Extract the length-prefixed encoding shared with `CaptureRequestIdentity` into one internal helper.
 
   * Both identities must use one canonical encoding.
   * The produced capture identity string must not change.
@@ -1083,11 +1083,11 @@ Why:
 
 Verification:
 
-* [ ] Types compile.
-* [ ] A regression test asserts the capture identity string for a fixed set of terms is byte-identical to the Phase 2 encoding.
-* [ ] Two settle commands for the same trade share an identity.
-* [ ] The same key against a different trade does not.
-* [ ] A capture identity and a settle identity never collide.
+* [x] Types compile.
+* [x] A regression test asserts the capture identity string for a fixed set of terms is byte-identical to the Phase 2 encoding.
+* [x] Two settle commands for the same trade share an identity.
+* [x] The same key against a different trade does not.
+* [x] A capture identity and a settle identity never collide.
 
 Engineering log:
 
@@ -1098,6 +1098,8 @@ Ready for 3.4 when:
 
 * the settlement domain types exist
 * the settlement command identity is defined and proven not to change capture behaviour
+
+Section 3.3 is complete. Do not begin Section 3.4 until requested.
 
 ---
 

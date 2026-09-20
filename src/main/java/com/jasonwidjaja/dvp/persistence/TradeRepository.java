@@ -27,7 +27,8 @@ public class TradeRepository {
             quantity,
             cash_amount,
             settlement_date,
-            status
+            status,
+            journal_id
             """;
 
     private static final String FIND_BY_ID_SQL = """
@@ -116,6 +117,7 @@ public class TradeRepository {
         return new Trade(
                 rs.getObject("id", UUID.class),
                 terms,
-                TradeStatus.valueOf(rs.getString("status")));
+                TradeStatus.valueOf(rs.getString("status")),
+                rs.getObject("journal_id", UUID.class));
     }
 }

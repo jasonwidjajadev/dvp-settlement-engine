@@ -1849,6 +1849,47 @@ Deviations and corrections:
 - Section 3.2 is complete.
 - Stopped here. Section 3.3 was not started.
 
+## 3.3 Settlement domain types
+
+### 3.3.1 Extend the trade domain for the settled state
+
+- Added `SETTLED` to `TradeStatus`.
+- Added nullable `journalId` to `Trade`.
+- `TradeTerms` was not changed.
+- Updated `TradeRepository` to select and map `journal_id`. Insert still stores `READY` with a null journal.
+- `TradeResponse` still omits `journalId`. That HTTP field belongs to a later API step.
+- Tests: `TradeDomainTest` READY with null journal and SETTLED with a journal; `TradeRepositoryIntegrationTest` asserts inserted trades have `journalId == null`.
+
+### 3.3.2 Create the journal and posting domain types
+
+- Added `SettlementJournal` (`id`, `tradeId`, `settledAt`).
+- Added `Posting` (`id`, `journalId`, `accountId`, `direction`, `amount`, `signedAmount`).
+- Added `PostingDirection` (`DEBIT`, `CREDIT`) with the approved project-local meaning: DEBIT decreases the balance, CREDIT increases it. Not GAAP.
+- Types are immutable records with no persistence annotations.
+
+### 3.3.3 Create the settlement attempt and outcome types
+
+- Added `SettlementOutcome`: `SETTLED`, `ALREADY_SETTLED`, `NOT_DUE`, `INSUFFICIENT_CASH`, `INSUFFICIENT_SECURITIES`.
+- `MISSING_ACCOUNT` is not a value.
+- Added `SettlementAttempt` (`id`, `tradeId`, `commandKey`, `outcome`, `journalId`, `businessDate`, `decidedAt`).
+- `SettlementOutcomeIntegrationTest` reads `settlement_attempt_outcome_supported` and asserts every enum name is accepted and `MISSING_ACCOUNT` is not.
+
+### 3.3.4 Create the settlement command and its request identity
+
+- Added `SettleCommand` (`idempotencyKey`, `tradeId`).
+- Added `SettleRequestIdentity` (`SETTLE_TRADE` + trade id).
+- Extracted package-private `RequestIdentityEncoding` so capture and settlement share one length-prefixed encoder.
+- `CaptureRequestIdentity` now delegates to that helper. Output is unchanged.
+- Regression: `CaptureRequestIdentityTest.phase2CaptureIdentityEncodingIsUnchanged` asserts the exact Phase 2 string for T-001 / Alice / Bob / EQ1 / 10 / 50000 / 2026-09-20.
+- `SettleRequestIdentityTest` asserts same-trade identity sharing, different-trade difference, and no collision with capture identity.
+
+- No settlement repositories, services, controllers, locking, or balance mutation.
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 134. Failures: 0. Errors: 0. Skipped: 0.
+- Section 3.3 is complete.
+- Stopped here. Section 3.4 was not started.
+
 
 
 

@@ -25,15 +25,28 @@ class TradeDomainTest {
     }
 
     @Test
-    void tradeIsReadyWithoutSettlementFields() {
+    void tradeIsReadyWithoutAJournal() {
         TradeTerms terms = aliceBuysEq1();
         UUID tradeId = UUID.fromString("00000000-0000-0000-0000-000000000101");
-        Trade trade = new Trade(tradeId, terms, TradeStatus.READY);
+        Trade trade = new Trade(tradeId, terms, TradeStatus.READY, null);
 
         assertThat(trade.id()).isEqualTo(tradeId);
         assertThat(trade.terms()).isEqualTo(terms);
         assertThat(trade.status()).isEqualTo(TradeStatus.READY);
-        assertThat(TradeStatus.values()).containsExactly(TradeStatus.READY);
+        assertThat(trade.journalId()).isNull();
+    }
+
+    @Test
+    void settledTradePointsAtItsJournal() {
+        TradeTerms terms = aliceBuysEq1();
+        UUID tradeId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        UUID journalId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        Trade trade = new Trade(tradeId, terms, TradeStatus.SETTLED, journalId);
+
+        assertThat(trade.status()).isEqualTo(TradeStatus.SETTLED);
+        assertThat(trade.journalId()).isEqualTo(journalId);
+        assertThat(trade.terms()).isEqualTo(terms);
+        assertThat(TradeStatus.values()).containsExactly(TradeStatus.READY, TradeStatus.SETTLED);
     }
 
     @Test

@@ -39,6 +39,7 @@ class TradeRepositoryIntegrationTest extends AbstractPostgresIntegrationTest {
         Trade byReference = trades.findByExternalTradeId("T-001").orElseThrow();
 
         assertThat(inserted.status()).isEqualTo(TradeStatus.READY);
+        assertThat(inserted.journalId()).isNull();
         assertThat(byId).isEqualTo(inserted);
         assertThat(byReference).isEqualTo(inserted);
         assertThat(byId.terms()).isEqualTo(terms);

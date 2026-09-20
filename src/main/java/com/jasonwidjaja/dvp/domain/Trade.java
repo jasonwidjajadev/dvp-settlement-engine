@@ -5,6 +5,7 @@ import java.util.UUID;
 public record Trade(
         UUID id,
         TradeTerms terms,
-        TradeStatus status
+        TradeStatus status,
+        UUID journalId
 ) {
 }

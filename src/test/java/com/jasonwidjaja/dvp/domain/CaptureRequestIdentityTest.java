@@ -12,6 +12,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CaptureRequestIdentityTest {
 
     @Test
+    void phase2CaptureIdentityEncodingIsUnchanged() {
+        TradeTerms terms = aliceBuysEq1("T-001", 10);
+
+        assertThat(CaptureRequestIdentity.of(terms)).isEqualTo(
+                "13:CAPTURE_TRADE,5:T-001,"
+                        + "36:00000000-0000-0000-0000-000000000001,"
+                        + "36:00000000-0000-0000-0000-000000000002,"
+                        + "36:00000000-0000-0000-0000-0000000000e1,"
+                        + "2:10,5:50000,10:2026-09-20,");
+    }
+
+    @Test
     void sameParsedTermsProduceTheSameIdentity() {
         TradeTerms first = aliceBuysEq1("T-001", 10);
         TradeTerms sameFields = aliceBuysEq1("T-001", 10);
