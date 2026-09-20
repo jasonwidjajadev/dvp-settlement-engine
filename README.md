@@ -1,99 +1,73 @@
-# dvp-settlement-engine
-Java/Spring Boot backend that simulates Delivery-versus-Payment trade settlement, safe retries, concurrency control, and reconciliation against external records.
+# DvP Settlement Engine
 
-## Local development
+Java/Spring Boot backend that simulates post-trade Delivery-versus-Payment settlement for already-matched securities trades.
 
-### Prerequisites
+The engine captures agreed trades as `READY`, then atomically exchanges simulated cash and securities in a single PostgreSQL transaction using deterministic row locking, durable idempotency, immutable settlement journals, and financial invariant checks.
 
-- Java 21
-- Docker Desktop
+## Current status
 
-### Setup
+Core settlement is complete through Phase 3.
 
-1. Clone the repository.
+- [x] Phase 1 — PostgreSQL foundation, accounts, Flyway, Spring JDBC, Testcontainers
+- [x] Phase 2 — Trade capture, durable idempotency, REST API
+- [x] Phase 3 — Atomic DvP settlement, journals, postings, financial inspection
+- [ ] Phase 4 — Concurrency and recovery demonstrations
+- [ ] Phase 5–6 — Reconciliation
+- [ ] Phase 7 — Packaging, CI, and final documentation polish
 
-2. Create your local environment file:
+## What it does
 
-```bash
-cp .env.example .env
-```
+- Captures already-matched trades as `READY`
+- Settles due trades atomically in one PostgreSQL transaction
+- Locks the trade first, then the four affected accounts in deterministic UUID order
+- Validates cash and securities only after locks are held
+- Rejects `NOT_DUE`, `INSUFFICIENT_CASH`, and `INSUFFICIENT_SECURITIES`
+- Creates one settlement journal and exactly four postings
+- Updates all four balances atomically
+- Transitions `READY -> SETTLED`
+- Replays completed commands without repeating financial effects
+- Rolls back all settlement effects on technical failure before commit
+- Exposes trades, accounts, attempts, journals, postings, and durable command outcomes through REST
 
-3. Update `.env` with your local database credentials if needed.
-
-4. Start PostgreSQL:
-
-```bash
-docker compose --env-file .env up -d
-```
-
-5. Export the environment variables:
-
-```bash
-set -a
-source .env
-set +a
-```
-
-### Run the application
-
-Start the Spring Boot application:
-
-```bash
-./mvnw spring-boot:run
-```
-
-Stop it with:
+## Settlement flow
 
 ```text
-Ctrl+C
+capture trade
+    ↓
+READY
+    ↓
+claim idempotency key
+    ↓
+lock trade
+    ↓
+resolve + lock four accounts
+    ↓
+validate buyer cash + seller securities
+    ↓
+create journal
+    ↓
+create four postings
+    ↓
+update four balances
+    ↓
+mark SETTLED
+    ↓
+record attempt + durable outcome
+    ↓
+COMMIT
 ```
 
-### Run the tests
+If a technical failure occurs before commit, PostgreSQL rolls the entire settlement back.
 
-Run the full test suite:
+## Example
 
-```bash
-./mvnw clean verify
+Trade:
+
+```text
+Alice buys 10 EQ1 from Bob for AUD 500.00
 ```
 
-### Trade Capture walkthrough
-
-After PostgreSQL is running and `.env` is exported, start the application, then seed the demo participants and accounts:
-
-```bash
-./mvnw spring-boot:run
-```
-
-```bash
-docker exec -i dvp-postgres psql -U dvp -d dvp < scripts/seed-demo.sql
-```
-
-Inspect balances, capture Alice buying 10 EQ1 from Bob, read the trade back, and retry the same command:
-
-```bash
-curl -sS http://localhost:8080/v1/accounts
-```
-
-```bash
-curl -sS -D - -X POST http://localhost:8080/v1/trades \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: capture-T-001' \
-  -d '{
-  "externalTradeId": "T-001",
-  "buyerId": "00000000-0000-0000-0000-000000000001",
-  "sellerId": "00000000-0000-0000-0000-000000000002",
-  "securityId": "00000000-0000-0000-0000-0000000000e1",
-  "quantity": 10,
-  "cashAmount": 50000,
-  "settlementDate": "2026-09-20"
-}'
-```
-
-```bash
-curl -sS http://localhost:8080/v1/trades/<trade-id-from-Location>
-```
-
-Repeat the same `POST`. The replayed response is the original `201`. Account balances stay:
+Before:
 
 ```text
 Alice AUD = 100000
@@ -102,414 +76,159 @@ Bob AUD   = 0
 Bob EQ1   = 10
 ```
 
-Nothing settles in Phase 2. The trade remains `READY`.
+Successful settlement creates:
 
-### Settlement walkthrough
-
-These commands were run against local PostgreSQL 18.6 after Flyway reached V3. Start PostgreSQL and the application first, then seed:
-
-```bash
-docker compose --env-file .env up -d
+```text
+Alice AUD   DEBIT   50000
+Bob AUD     CREDIT  50000
+Alice EQ1   CREDIT  10
+Bob EQ1     DEBIT   10
 ```
 
+After:
+
+```text
+Alice AUD = 50000
+Alice EQ1 = 10
+Bob AUD   = 50000
+Bob EQ1   = 0
+```
+
+The trade becomes `SETTLED` with one journal, four immutable postings, and one `SETTLED` attempt.
+
+## API
+
+```text
+POST /v1/trades
+GET  /v1/trades/{id}
+
+POST /v1/trades/{id}/settle
+GET  /v1/trades/{id}/attempts
+
+GET  /v1/accounts
+GET  /v1/journals/{id}
+GET  /v1/commands/{key}
+```
+
+With the application running:
+
+- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+
+## Stack
+
+- Java 21
+- Spring Boot
+- Spring MVC
+- Spring JDBC / `NamedParameterJdbcTemplate`
+- PostgreSQL 18
+- Flyway
+- Testcontainers
+- JUnit / AssertJ
+- springdoc OpenAPI / Swagger UI
+- Maven Wrapper
+- Docker Desktop
+
+## Local development
+
+Prerequisites:
+
+- Java 21
+- Docker Desktop
+
+Setup:
+
 ```bash
+cp .env.example .env
+docker compose --env-file .env up -d
+
 set -a
 source .env
 set +a
+
 ./mvnw spring-boot:run
 ```
+
+Stop Spring Boot with `Ctrl+C`.
+
+Stop PostgreSQL when needed:
+
+```bash
+docker compose --env-file .env down
+```
+
+Seed the demo data:
 
 ```bash
 docker exec -i dvp-postgres psql -U dvp -d dvp < scripts/seed-demo.sql
 ```
 
-Inspect balances, capture Alice buying 10 EQ1 from Bob, settle the trade, follow the journal, and replay the settle command:
+## Testing
+
+Run the complete build and test suite:
 
 ```bash
-curl -sS http://localhost:8080/v1/accounts
+./mvnw clean verify
 ```
 
-```bash
-curl -sS -D - -X POST http://localhost:8080/v1/trades \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: capture-T-001' \
-  -d '{
-  "externalTradeId": "T-001",
-  "buyerId": "00000000-0000-0000-0000-000000000001",
-  "sellerId": "00000000-0000-0000-0000-000000000002",
-  "securityId": "00000000-0000-0000-0000-0000000000e1",
-  "quantity": 10,
-  "cashAmount": 50000,
-  "settlementDate": "2026-09-20"
-}'
-```
-
-```bash
-curl -sS -D - -X POST http://localhost:8080/v1/trades/<trade-id-from-Location>/settle \
-  -H 'Idempotency-Key: settle-T-001'
-```
-
-```bash
-curl -sS http://localhost:8080/v1/journals/<journal-id-from-Location>
-```
-
-```bash
-curl -sS http://localhost:8080/v1/trades/<trade-id-from-Location>
-```
-
-```bash
-curl -sS http://localhost:8080/v1/trades/<trade-id-from-Location>/attempts
-```
-
-```bash
-curl -sS http://localhost:8080/v1/commands/settle-T-001
-```
-
-```bash
-curl -sS http://localhost:8080/v1/accounts
-```
-
-Repeat the same settle `POST`. The replayed response is the original `201` with the same journal `Location`. Observed result:
+Phase 3 verification:
 
 ```text
-Trade SETTLED with journal id
+Tests run: 200
+Failures: 0
+Errors: 0
+Skipped: 0
 
-Alice AUD = 50000
-Alice EQ1 = 10
-Bob AUD   = 50000
-Bob EQ1   = 0
-
-one journal
-four postings
-one SETTLED attempt
+BUILD SUCCESS
 ```
 
-### OpenAPI / Swagger UI
+The integration suite runs against real PostgreSQL 18.6 with Testcontainers and covers:
 
-With the application running:
+- Flyway V1 → V2 → V3 upgrades
+- trade capture and idempotent replay
+- deterministic row locking
+- due-date and balance validation
+- atomic settlement
+- rollback after financial writes
+- immutable journal and posting history
+- balance reconstruction
+- cash and security conservation
+- REST settlement and inspection
 
-- Swagger UI: http://localhost:8080/swagger-ui.html
-- OpenAPI JSON: http://localhost:8080/v3/api-docs
+## Database evolution
 
-### Environment files
+```text
+V1
+├── participant
+├── asset
+└── account
 
-- `.env.example`
-  - committed to Git
-  - documents the required environment variables
-  - contains placeholder values only
+V2
+├── trade
+└── command_result
 
-- `.env`
-  - local to each developer
-  - contains actual local credentials
-  - must not be committed
-
-## Architecture
-```txt
-DVP SETTLEMENT ENGINE
-================================================================================
-
-Developer machine
-│
-├── Java 21 / Temurin
-│   └── Java language + JDK used to compile and run the application
-│
-├── Maven Wrapper
-│   ├── mvnw / mvnw.cmd
-│   ├── .mvn/wrapper/
-│   └── pom.xml
-│       └── builds the project and manages dependencies
-│
-├── Spring Boot application
-│   │
-│   ├── DvpApplication.java
-│   │   └── main entry point that starts the application
-│   │
-│   ├── application.yml
-│   │   └── application configuration
-│   │
-│   ├── Spring MVC
-│   │   └── receives HTTP requests and provides the REST API
-│   │
-│   ├── Spring JDBC
-│   │   └── application queries and updates database data using explicit SQL
-│   │
-│   ├── NamedParameterJdbcTemplate
-│   │   └── Spring JDBC helper for executing parameterized SQL
-│   │
-│   ├── DataSource
-│   │   └── Java abstraction for obtaining database connections
-│   │
-│   ├── HikariCP
-│   │   └── connection pool that manages reusable PostgreSQL connections
-│   │
-│   └── PostgreSQL JDBC Driver
-│       └── actual Java driver that communicates with PostgreSQL
-│
-├── Flyway
-│   └── creates and changes the database structure using versioned SQL migrations
-│
-├── Environment configuration
-│   │
-│   ├── .env
-│   │   └── local database credentials/config; never committed
-│   │
-│   └── .env.example
-│       └── template showing which environment variables are required
-│
-└── Docker Desktop
-    └── runs containers on your Mac
-        │
-        └── PostgreSQL container
-            └── PostgreSQL 18.x
-                └── durable relational database that stores project data
-
-
-HOW THE MAIN PIECES CONNECT
-================================================================================
-
-Java 21 / Temurin
-    │
-    └── compiles + runs Java
-             │
-             ▼
-         Maven
-             │
-             ├── reads pom.xml
-             │
-             ├── downloads dependencies
-             │
-             ├── compiles code
-             │
-             ├── runs tests
-             │
-             └── packages application
-             │
-             ▼
-       Spring Boot application
-             │
-             ├── Spring MVC
-             │   └── HTTP / REST API
-             │
-             ├── Spring JDBC
-             │   └── queries + updates data
-             │
-             └── Flyway
-                 └── creates + changes database structure
-             │
-             ▼
-          DataSource
-             │
-             ▼
-          HikariCP
-             │
-             ▼
-     PostgreSQL JDBC Driver
-             │
-             ▼
-       PostgreSQL 18
-             │
-             ├── tables
-             ├── rows
-             ├── constraints
-             ├── transactions
-             └── later: row locks
-
-
-SPRING JDBC VS FLYWAY
-================================================================================
-
-Spring JDBC
-    │
-    └── works with DATA inside existing tables
-
-Examples:
-
-    SELECT ...
-    INSERT ...
-    UPDATE ...
-
-Example:
-
-    SELECT *
-    FROM account;
-
-
-Flyway
-    │
-    └── works with DATABASE STRUCTURE
-
-Examples:
-
-    CREATE TABLE ...
-    ALTER TABLE ...
-    CREATE INDEX ...
-
-Example:
-
-    CREATE TABLE account (...);
-
-
-Simple distinction:
-- Flyway → creates the shelves
-- Spring JDBC → reads and changes the things stored on the shelves
-
-
-DATABASE EVOLUTION
-================================================================================
-
-1.4 PostgreSQL connection
-    │
-    └── PostgreSQL exists but database is empty
-              │
-              ▼
-
-1.5 Flyway
-    │
-    └── creates schema
-        ├── participant
-        ├── asset
-        └── account
-              │
-              ▼
-
-1.6 Seed data
-    │
-    └── inserts known demo data
-        ├── Alice
-        ├── Bob
-        ├── AUD
-        ├── EQ1
-        └── starting balances
-              │
-              ▼
-
-1.7 Spring JDBC
-    │
-    └── Java reads those records
-              │
-              ▼
-
-1.8 Testcontainers
-    │
-    └── automatically creates temporary PostgreSQL for tests
-
-
-CONFIGURATION FLOW
-================================================================================
-
-.env
-│
-│ contains actual local values
-│
-▼
-environment variables
-│
-▼
-application.yml
-│
-│ tells Spring where PostgreSQL is
-│
-▼
-Spring Boot
-│
-▼
-DataSource / HikariCP
-│
-▼
-PostgreSQL JDBC Driver
-│
-▼
-PostgreSQL
-
-
-TEST FLOW
-================================================================================
-
-./mvnw verify
-    │
-    ▼
-Maven
-    │
-    ▼
-JUnit
-    │
-    ▼
-Testcontainers
-    │
-    ▼
-Docker
-    │
-    ▼
-temporary PostgreSQL
-    │
-    ▼
-Flyway
-    │
-    └── creates database schema
-    │
-    ▼
-seed data
-    │
-    ▼
-Spring JDBC
-    │
-    └── reads/queries database
-    │
-    ▼
-assertions
-    │
-    ▼
-PASS / FAIL
+V3
+├── settlement_journal
+├── posting
+├── settlement_attempt
+├── READY / SETTLED trade support
+└── SETTLE_TRADE command support
 ```
 
-Terminology
+## Documentation
 
-- Java 21 / Temurin → language + JDK used to compile and run Java
-- Maven → builds the project and manages dependencies
-- pom.xml → Maven configuration for this project
-- Spring Boot → framework that runs the backend application
-- DvpApplication.java → main starting point of the backend
--  Spring MVC → receives HTTP requests and provides REST endpoints
-- Spring JDBC → application queries and updates database data
-- NamedParameterJdbcTemplate → helper for executing SQL safely with named parameters
-- DataSource → gives Java database connections
-- HikariCP → manages a pool of reusable database connections
-- PostgreSQL JDBC Driver → lets Java communicate with PostgreSQL
-- PostgreSQL → durable database that stores financial state
-- Flyway → creates/changes database structure
-- Migration → one versioned database-structure change
-- Seed data → inserts known example records
-- Docker Desktop → runs PostgreSQL locally inside a container
-- .env → private local environment values
-- application.yml → Spring application configuration
-- JUnit → Java testing framework
-- AssertJ → readable test assertions
-- Testcontainers → starts temporary real PostgreSQL databases for automated tests
-- ./mvnw verify → builds + tests + verifies the whole project
+Detailed design and implementation history:
 
-
-## Schema
-
-```txt
-participant
-├── id
-└── name
-
-asset
-├── id
-├── code
-└── type
-
-account
-├── id
-├── participant_id  → participant.id
-├── asset_id        → asset.id
-├── opening_balance
-└── current_balance
+```text
+docs/project-spec.md
+docs/decisions.md
+docs/implementation-plan.md
+docs/detailed-plan/phase-1.md
+docs/detailed-plan/phase-2.md
+docs/detailed-plan/phase-3.md
+docs/engineering-log.md
 ```
 
-- participant + asset → only one account
-- opening balance → cannot be negative
-- current balance → cannot be negative
-- participant_id → must point to a real participant
-- asset_id → must point to a real asset
+## Next work
+
+Future phases will add controlled concurrency and recovery demonstrations, reconciliation, CI, packaging, and final documentation polish.
