@@ -1581,6 +1581,24 @@ Phase 2 is complete.
   - Tests run: 94. Failures: 0. Errors: 0. Skipped: 0.
 - No Phase 3 work. No settlement. No `docs/detailed-plan/phase-3.md` change.
 
+## Unmapped path 404
+
+- `GET /` was returning `500` `INTERNAL_ERROR`.
+  - Spring MVC throws `NoResourceFoundException` for the unmatched root/static-resource path.
+  - `ApiExceptionHandler`'s `Exception` catch-all mapped that to a safe 500.
+- Added `@ExceptionHandler(NoResourceFoundException.class)`:
+  - `404` `NOT_FOUND` / `Resource does not exist`
+  - does not use `UNKNOWN_TRADE`
+  - does not return the exception message or path
+- Left the generic `Exception` handler as `500` `INTERNAL_ERROR`.
+- Added `TradeCaptureHttpIntegrationTest.unmappedRootPathReturnsNotFoundWithoutHidingOpenApi`.
+  - `GET /` → `404` `NOT_FOUND`
+  - `GET /v3/api-docs` still `200` and includes `/v1/trades`
+  - `GET /swagger-ui/index.html` still `200`
+- Existing tests still cover `GET /v1/trades/{unknown-uuid}` → `UNKNOWN_TRADE` and mocked capture failure → `INTERNAL_ERROR`.
+- Ran `./mvnw verify`.
+  - Result: BUILD SUCCESS. Tests run: 95, Failures: 0, Errors: 0, Skipped: 0.
+- No Phase 3 work.
 
 
 

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 class ApiExceptionHandler {
@@ -41,6 +42,11 @@ class ApiExceptionHandler {
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ErrorResponse> unsupportedMediaType() {
         return error(415, "UNSUPPORTED_MEDIA_TYPE", "Content-Type must be application/json");
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    ResponseEntity<ErrorResponse> unknownResource() {
+        return error(404, "NOT_FOUND", "Resource does not exist");
     }
 
     @ExceptionHandler(Exception.class)

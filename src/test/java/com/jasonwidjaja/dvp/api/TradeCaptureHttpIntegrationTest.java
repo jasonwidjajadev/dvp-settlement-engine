@@ -275,6 +275,24 @@ class TradeCaptureHttpIntegrationTest extends AbstractPostgresIntegrationTest {
         assertSafeError(invalid);
     }
 
+    @Test
+    void unmappedRootPathReturnsNotFoundWithoutHidingOpenApi() {
+        HttpResponse root = get("/");
+        assertThat(root.status()).isEqualTo(404);
+        ErrorResponse error = json.readValue(root.body(), ErrorResponse.class);
+        assertThat(error.code()).isEqualTo("NOT_FOUND");
+        assertThat(error.message()).isEqualTo("Resource does not exist");
+        assertThat(error.message()).doesNotContain("/");
+        assertSafeError(error);
+
+        HttpResponse apiDocs = get("/v3/api-docs");
+        assertThat(apiDocs.status()).isEqualTo(200);
+        assertThat(apiDocs.body()).contains("\"/v1/trades\"");
+
+        HttpResponse swaggerUi = get("/swagger-ui/index.html");
+        assertThat(swaggerUi.status()).isEqualTo(200);
+    }
+
     private HttpResponse postTrade(String idempotencyKey, String body) {
         List<String> keys = idempotencyKey == null ? List.of() : List.of(idempotencyKey);
         return post("/v1/trades", keys, MediaType.APPLICATION_JSON, body);
