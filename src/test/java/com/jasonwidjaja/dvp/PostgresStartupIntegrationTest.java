@@ -45,16 +45,17 @@ class PostgresStartupIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
-    void flywayAppliesV1AndV2ToCleanTestDatabase() {
+    void flywayAppliesV1V2AndV3ToCleanTestDatabase() {
         flyway.validate();
         assertThat(flyway.info().current()).isNotNull();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("2");
-        assertThat(flyway.info().current().getScript()).isEqualTo("V2__trades_and_command_results.sql");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("3");
+        assertThat(flyway.info().current().getScript()).isEqualTo("V3__settlement_journal_postings_attempts.sql");
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getScript())
                 .containsExactly(
                         "V1__participants_assets_accounts.sql",
-                        "V2__trades_and_command_results.sql");
+                        "V2__trades_and_command_results.sql",
+                        "V3__settlement_journal_postings_attempts.sql");
 
         List<String> tables = jdbc.queryForList(
                 """
@@ -72,7 +73,10 @@ class PostgresStartupIntegrationTest extends AbstractPostgresIntegrationTest {
                 "command_result",
                 "flyway_schema_history",
                 "participant",
+                "posting",
+                "settlement_attempt",
+                "settlement_journal",
                 "trade");
-        assertThat(tables).doesNotContain("settlement", "journal", "reconciliation");
+        assertThat(tables).doesNotContain("reconciliation");
     }
 }

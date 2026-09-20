@@ -1769,6 +1769,86 @@ Change from the original 3.1.4 proposal:
 - The settlement record model is approved.
 - Stopped here. Section 3.2 was not started.
 
+## 3.2 Flyway V3 settlement schema
+
+### 3.2.1 Create Flyway V3
+
+- Added `src/main/resources/db/migration/V3__settlement_journal_postings_attempts.sql`.
+  - Purpose: settlement journal, postings, settlement attempts, and the trade-to-journal relationship.
+- Confirmed V1 and V2 were not edited.
+  - `git diff` on both files is empty.
+
+### 3.2.2 Create the settlement journal table
+
+- Table: `settlement_journal`
+  - `id UUID PRIMARY KEY`
+  - `trade_id UUID NOT NULL` unique, FK to `trade(id)` — I2, one journal per trade
+  - `settled_at TIMESTAMPTZ NOT NULL`
+  - `UNIQUE (id, trade_id)` — referenced by the same-trade composite FK from `trade`
+
+### 3.2.3 Create the posting table
+
+- Table: `posting`
+  - `journal_id` FK to `settlement_journal`
+  - `account_id` FK to `account`
+  - `direction` in `DEBIT`, `CREDIT`
+  - `amount > 0`
+  - unique `(journal_id, account_id)`
+  - generated `signed_amount`: `DEBIT` → `-amount`, `CREDIT` → `+amount`
+- No asset column. DEBIT/CREDIT are project-local balance-movement directions, not GAAP.
+
+### 3.2.4 Create the settlement attempt table
+
+- Table: `settlement_attempt`
+  - `trade_id` FK to `trade`
+  - `command_key` unique FK to `command_result`
+  - `outcome` in `SETTLED`, `ALREADY_SETTLED`, `NOT_DUE`, `INSUFFICIENT_CASH`, `INSUFFICIENT_SECURITIES`
+  - `journal_id` present exactly when outcome is `SETTLED` or `ALREADY_SETTLED`
+  - `business_date` and `decided_at` `NOT NULL`
+  - partial unique index: at most one `SETTLED` attempt per trade
+- `MISSING_ACCOUNT` is not an allowed outcome. Inserting it fails `settlement_attempt_outcome_supported`.
+
+### 3.2.5 Extend the trade and command-result tables
+
+- Widened `trade_status_supported` to `READY`, `SETTLED`.
+- Added nullable unique `trade.journal_id` FK to `settlement_journal`.
+- `CHECK ((status = 'SETTLED') = (journal_id IS NOT NULL))`.
+- Composite FK `trade (journal_id, id) → settlement_journal (id, trade_id)` so Trade A cannot point at Trade B's journal.
+- Widened `command_result_operation_supported` to `CAPTURE_TRADE`, `SETTLE_TRADE`.
+- Existing V2 rows were not rewritten. Upgrade test: captured `READY` trade stays `READY` with `journal_id IS NULL`.
+
+### 3.2.6 Protect settlement history from modification
+
+- `settlement_history_immutable` rejects `UPDATE` and `DELETE` on `settlement_journal`, `posting`, and `settlement_attempt`.
+- `trade_protect_settlement_state` rejects captured-term edits and any update of a `SETTLED` row. The only allowed update is `READY → SETTLED` that also sets `journal_id`.
+- Deferred constraint trigger `settlement_journal_shape` at commit:
+  - exactly four postings
+  - buyer/seller AUD cash DEBIT/CREDIT of `cash_amount`
+  - buyer/seller accounts for exactly `trade.security_id` CREDIT/DEBIT of `quantity`
+  - per-asset signed net is zero
+- `TRUNCATE` still clears the tables because it does not fire row-level triggers.
+
+### 3.2.7 Verify V3 and preserve Phase 1 and Phase 2 state
+
+- Updated `AbstractPostgresIntegrationTest` truncate list to include `settlement_attempt`, `posting`, `settlement_journal`.
+- Updated `PostgresStartupIntegrationTest` to V1+V2+V3 and the nine public tables.
+- Added `SettlementSchemaIntegrationTest` covering 3.2.2–3.2.6.
+- Added `FlywayV3UpgradeIntegrationTest`: V2 database with seed + captured trade/command result upgrades to V3 without changing those rows; new settlement tables start empty.
+
+Deviations and corrections:
+
+- `FlywayV2UpgradeIntegrationTest` now pins Flyway `target` to version 2. Without that pin, adding V3 would make the V1→V2 test apply V3.
+- `TradeCaptureSchemaIntegrationTest.unsupportedStatusIsRejected` now inserts `CANCELLED` instead of `SETTLED`, because V3 accepts `SETTLED` when `journal_id` is set.
+- Updating `posting.signed_amount` is rejected as invalid SQL (`BadSqlGrammarException`) because it is a generated column. The immutability trigger still rejects `UPDATE posting SET amount`.
+- First `SettlementSchemaIntegrationTest` compile failed: `Autowired` must be imported from `org.springframework.beans.factory.annotation`. Fixed.
+- No settlement services, repositories, controllers, or Java domain types were added.
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 125. Failures: 0. Errors: 0. Skipped: 0.
+- Section 3.2 is complete.
+- Stopped here. Section 3.3 was not started.
+
 
 
 

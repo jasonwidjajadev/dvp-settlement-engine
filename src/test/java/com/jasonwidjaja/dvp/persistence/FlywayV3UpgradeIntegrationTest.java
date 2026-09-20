@@ -3,6 +3,7 @@ package com.jasonwidjaja.dvp.persistence;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,12 +21,14 @@ import com.jasonwidjaja.dvp.support.PostgresTestDatabase;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class FlywayV2UpgradeIntegrationTest {
+class FlywayV3UpgradeIntegrationTest {
 
-    private static final String UPGRADE_DATABASE = "dvp_v1_to_v2";
+    private static final String UPGRADE_DATABASE = "dvp_v2_to_v3";
+    private static final UUID TRADE_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
+    private static final LocalDate SETTLEMENT_DATE = LocalDate.of(2026, 9, 20);
 
     @Test
-    void v1DatabaseUpgradesToV2WithoutChangingPhase1Data() throws Exception {
+    void v2DatabaseUpgradesToV3WithoutChangingPhase2Data() throws Exception {
         createUpgradeDatabase();
 
         String url = upgradeJdbcUrl();
@@ -35,52 +38,118 @@ class FlywayV2UpgradeIntegrationTest {
         Flyway.configure()
                 .dataSource(url, username, password)
                 .locations("classpath:db/migration")
-                .target(MigrationVersion.fromVersion("1"))
+                .target(MigrationVersion.fromVersion("2"))
                 .load()
                 .migrate();
 
         DataSource dataSource = new DriverManagerDataSource(url, username, password);
         NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(dataSource);
 
-        assertThat(tableNames(jdbc)).containsExactly("account", "asset", "flyway_schema_history", "participant");
-        assertThat(tableNames(jdbc)).doesNotContain("trade", "command_result");
-
         DemoSeed.apply(dataSource);
-        List<AccountSnapshot> before = accountSnapshots(jdbc);
-        assertThat(before).hasSize(4);
+        insertCapturedTrade(jdbc);
+        List<AccountSnapshot> accountsBefore = accountSnapshots(jdbc);
+        Map<String, Object> tradeBefore = jdbc.queryForMap(
+                "SELECT * FROM trade WHERE id = :id",
+                Map.of("id", TRADE_ID));
+        Map<String, Object> commandBefore = jdbc.queryForMap(
+                "SELECT * FROM command_result WHERE command_key = :key",
+                Map.of("key", "capture-T-001"));
 
         Flyway upgraded = Flyway.configure()
                 .dataSource(url, username, password)
                 .locations("classpath:db/migration")
-                .target(MigrationVersion.fromVersion("2"))
                 .load();
         upgraded.migrate();
 
-        assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("2");
+        assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("3");
         assertThat(upgraded.info().applied())
                 .extracting(info -> info.getScript())
                 .containsExactly(
                         "V1__participants_assets_accounts.sql",
-                        "V2__trades_and_command_results.sql");
+                        "V2__trades_and_command_results.sql",
+                        "V3__settlement_journal_postings_attempts.sql");
         assertThat(tableNames(jdbc)).containsExactly(
                 "account",
                 "asset",
                 "command_result",
                 "flyway_schema_history",
                 "participant",
+                "posting",
+                "settlement_attempt",
+                "settlement_journal",
                 "trade");
-        assertThat(accountSnapshots(jdbc)).containsExactlyElementsOf(before);
-        assertThat(count(jdbc, "participant")).isEqualTo(2);
-        assertThat(count(jdbc, "asset")).isEqualTo(2);
-        assertThat(count(jdbc, "account")).isEqualTo(4);
-        assertThat(count(jdbc, "trade")).isZero();
-        assertThat(count(jdbc, "command_result")).isZero();
-        assertThat(nameOf(jdbc, DemoSeed.ALICE_ID)).isEqualTo("Alice");
-        assertThat(nameOf(jdbc, DemoSeed.BOB_ID)).isEqualTo("Bob");
-        assertThat(assetCode(jdbc, DemoSeed.AUD_ID)).isEqualTo("AUD");
-        assertThat(assetCode(jdbc, DemoSeed.EQ1_ID)).isEqualTo("EQ1");
-        assertThat(balance(jdbc, DemoSeed.ALICE_AUD_ID, "current_balance")).isEqualTo(100000);
-        assertThat(balance(jdbc, DemoSeed.BOB_EQ1_ID, "current_balance")).isEqualTo(10);
+        assertThat(accountSnapshots(jdbc)).containsExactlyElementsOf(accountsBefore);
+        assertThat(jdbc.queryForMap("SELECT * FROM trade WHERE id = :id", Map.of("id", TRADE_ID)))
+                .containsAllEntriesOf(tradeBefore);
+        assertThat(jdbc.queryForObject(
+                        "SELECT journal_id FROM trade WHERE id = :id",
+                        Map.of("id", TRADE_ID),
+                        UUID.class))
+                .isNull();
+        assertThat(jdbc.queryForObject(
+                        "SELECT status FROM trade WHERE id = :id",
+                        Map.of("id", TRADE_ID),
+                        String.class))
+                .isEqualTo("READY");
+        assertThat(jdbc.queryForMap(
+                        "SELECT * FROM command_result WHERE command_key = :key",
+                        Map.of("key", "capture-T-001")))
+                .containsAllEntriesOf(commandBefore);
+        assertThat(count(jdbc, "settlement_journal")).isZero();
+        assertThat(count(jdbc, "posting")).isZero();
+        assertThat(count(jdbc, "settlement_attempt")).isZero();
+    }
+
+    private static void insertCapturedTrade(NamedParameterJdbcTemplate jdbc) {
+        jdbc.update(
+                """
+                INSERT INTO trade (
+                    id,
+                    external_trade_id,
+                    buyer_id,
+                    seller_id,
+                    security_id,
+                    quantity,
+                    cash_amount,
+                    settlement_date,
+                    status
+                ) VALUES (
+                    :id,
+                    'T-001',
+                    :buyerId,
+                    :sellerId,
+                    :securityId,
+                    10,
+                    50000,
+                    :settlementDate,
+                    'READY'
+                )
+                """,
+                Map.of(
+                        "id", TRADE_ID,
+                        "buyerId", DemoSeed.ALICE_ID,
+                        "sellerId", DemoSeed.BOB_ID,
+                        "securityId", DemoSeed.EQ1_ID,
+                        "settlementDate", SETTLEMENT_DATE));
+        jdbc.update(
+                """
+                INSERT INTO command_result (
+                    command_key,
+                    operation,
+                    request_identity,
+                    http_status,
+                    response_body,
+                    location
+                ) VALUES (
+                    'capture-T-001',
+                    'CAPTURE_TRADE',
+                    'captured-T-001',
+                    201,
+                    '{"status":"READY"}',
+                    '/v1/trades/00000000-0000-0000-0000-000000000101'
+                )
+                """,
+                Map.of());
     }
 
     private static void createUpgradeDatabase() throws Exception {
@@ -131,27 +200,6 @@ class FlywayV2UpgradeIntegrationTest {
 
     private static Integer count(NamedParameterJdbcTemplate jdbc, String table) {
         return jdbc.queryForObject("SELECT count(*) FROM " + table, Map.of(), Integer.class);
-    }
-
-    private static String nameOf(NamedParameterJdbcTemplate jdbc, UUID participantId) {
-        return jdbc.queryForObject(
-                "SELECT name FROM participant WHERE id = :id",
-                Map.of("id", participantId),
-                String.class);
-    }
-
-    private static String assetCode(NamedParameterJdbcTemplate jdbc, UUID assetId) {
-        return jdbc.queryForObject(
-                "SELECT code FROM asset WHERE id = :id",
-                Map.of("id", assetId),
-                String.class);
-    }
-
-    private static Long balance(NamedParameterJdbcTemplate jdbc, UUID accountId, String column) {
-        return jdbc.queryForObject(
-                "SELECT " + column + " FROM account WHERE id = :id",
-                Map.of("id", accountId),
-                Long.class);
     }
 
     private record AccountSnapshot(

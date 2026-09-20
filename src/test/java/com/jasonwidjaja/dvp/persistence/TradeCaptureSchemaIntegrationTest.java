@@ -205,7 +205,7 @@ class TradeCaptureSchemaIntegrationTest extends AbstractPostgresIntegrationTest 
                         DemoSeed.EQ1_ID,
                         10,
                         50000,
-                        "SETTLED"),
+                        "CANCELLED"),
                 "trade_status_supported");
     }
 

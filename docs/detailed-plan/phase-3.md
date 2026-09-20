@@ -495,16 +495,16 @@ Do not modify V1 or V2.
 
 ## 3.2.1 Create Flyway V3
 
-* [ ] Create:
+* [x] Create:
 
 ```text
 src/main/resources/db/migration/
 └── V3__settlement_journal_postings_attempts.sql
 ```
 
-* [ ] Keep V1 and V2 unchanged.
+* [x] Keep V1 and V2 unchanged.
 
-* [ ] Write V3 so it works on both a clean database and a database already at V2.
+* [x] Write V3 so it works on both a clean database and a database already at V2.
 
 Why:
 
@@ -513,8 +513,8 @@ Why:
 
 Verification:
 
-* [ ] Flyway discovers V3.
-* [ ] `git log` shows V1 and V2 unchanged in this phase.
+* [x] Flyway discovers V3.
+* [x] `git log` shows V1 and V2 unchanged in this phase.
 
 Engineering log:
 
@@ -534,7 +534,7 @@ What is a settlement journal?
 * A journal is the permanent record of one completed settlement.
 * It is the anchor for the four postings and the reason the trade's balances changed.
 
-* [ ] Create `settlement_journal`.
+* [x] Create `settlement_journal`.
 
 Store:
 
@@ -544,9 +544,9 @@ trade_id
 settled_at
 ```
 
-* [ ] Use a UUID primary key, consistent with Phase 1 and Phase 2.
+* [x] Use a UUID primary key, consistent with Phase 1 and Phase 2.
 
-* [ ] Add constraints:
+* [x] Add constraints:
 
   * `trade_id` references `trade`
   * `trade_id` is unique
@@ -559,9 +559,9 @@ Why:
 
 Verification:
 
-* [ ] A journal can be inserted for an existing trade.
-* [ ] A second journal for the same trade fails.
-* [ ] A journal for an unknown trade fails.
+* [x] A journal can be inserted for an existing trade.
+* [x] A second journal for the same trade fails.
+* [x] A journal for an unknown trade fails.
 
 Engineering log:
 
@@ -581,7 +581,7 @@ What is a posting?
 * A posting is one balance movement inside one journal.
 * A successful settlement creates exactly four.
 
-* [ ] Create `posting`.
+* [x] Create `posting`.
 
 Store:
 
@@ -594,7 +594,7 @@ amount
 signed_amount   (generated)
 ```
 
-* [ ] Add constraints:
+* [x] Add constraints:
 
   * `journal_id` references `settlement_journal`
   * `account_id` references `account`
@@ -602,7 +602,7 @@ signed_amount   (generated)
   * `amount > 0`
   * `(journal_id, account_id)` is unique
 
-* [ ] Generate the signed effect from the direction and amount.
+* [x] Generate the signed effect from the direction and amount.
 
 Conceptually:
 
@@ -612,7 +612,7 @@ signed_amount BIGINT GENERATED ALWAYS AS (
 ) STORED
 ```
 
-* [ ] Do not store an asset column on the posting.
+* [x] Do not store an asset column on the posting.
 
 Why:
 
@@ -622,12 +622,12 @@ Why:
 
 Verification:
 
-* [ ] A valid posting can be inserted.
-* [ ] `amount = 0` and negative amounts fail.
-* [ ] An unsupported direction fails.
-* [ ] A duplicate account within one journal fails.
-* [ ] `signed_amount` is negative for `DEBIT` and positive for `CREDIT`.
-* [ ] An `UPDATE` of `signed_amount` is not possible.
+* [x] A valid posting can be inserted.
+* [x] `amount = 0` and negative amounts fail.
+* [x] An unsupported direction fails.
+* [x] A duplicate account within one journal fails.
+* [x] `signed_amount` is negative for `DEBIT` and positive for `CREDIT`.
+* [x] An `UPDATE` of `signed_amount` is not possible.
 
 Engineering log:
 
@@ -647,7 +647,7 @@ What is a settlement attempt?
 * A settlement attempt is a committed settlement *decision*.
 * It exists because a rejected settlement leaves the trade `READY` with no journal, and that decision must still be visible afterwards (ADR-011).
 
-* [ ] Create `settlement_attempt`.
+* [x] Create `settlement_attempt`.
 
 Store:
 
@@ -661,7 +661,7 @@ business_date
 decided_at
 ```
 
-* [ ] Add constraints:
+* [x] Add constraints:
 
   * `trade_id` references `trade`
   * `command_key` references `command_result`
@@ -694,13 +694,13 @@ Why:
 
 Verification:
 
-* [ ] Each approved outcome can be inserted.
-* [ ] An unsupported outcome fails.
-* [ ] `SETTLED` without a journal fails.
-* [ ] A rejection with a journal fails.
-* [ ] A second attempt for the same command key fails.
-* [ ] A second `SETTLED` attempt for the same trade fails.
-* [ ] An attempt for an unknown command key fails.
+* [x] Each approved outcome can be inserted.
+* [x] An unsupported outcome fails.
+* [x] `SETTLED` without a journal fails.
+* [x] A rejection with a journal fails.
+* [x] A second attempt for the same command key fails.
+* [x] A second `SETTLED` attempt for the same trade fails.
+* [x] An attempt for an unknown command key fails.
 
 Engineering log:
 
@@ -718,7 +718,7 @@ What is changing?
 
 * V2 deliberately allowed only `READY` trades and only the `CAPTURE_TRADE` operation. Both now need one more value.
 
-* [ ] Extend the trade status constraint.
+* [x] Extend the trade status constraint.
 
 ```sql
 ALTER TABLE trade DROP CONSTRAINT trade_status_supported;
@@ -726,7 +726,7 @@ ALTER TABLE trade ADD CONSTRAINT trade_status_supported
     CHECK (status IN ('READY', 'SETTLED'));
 ```
 
-* [ ] Add the trade-to-journal relationship.
+* [x] Add the trade-to-journal relationship.
 
   * add nullable `journal_id`
   * foreign key to `settlement_journal`
@@ -734,7 +734,7 @@ ALTER TABLE trade ADD CONSTRAINT trade_status_supported
   * `CHECK ((status = 'SETTLED') = (journal_id IS NOT NULL))`
   * `trade.journal_id` must reference the journal whose `trade_id` is that same trade, so Trade A cannot point at Trade B's journal
 
-* [ ] Extend the command-result operation constraint.
+* [x] Extend the command-result operation constraint.
 
 ```sql
 ALTER TABLE command_result DROP CONSTRAINT command_result_operation_supported;
@@ -742,7 +742,7 @@ ALTER TABLE command_result ADD CONSTRAINT command_result_operation_supported
     CHECK (operation IN ('CAPTURE_TRADE', 'SETTLE_TRADE'));
 ```
 
-* [ ] Leave every existing V2 column, constraint, trigger and row untouched.
+* [x] Leave every existing V2 column, constraint, trigger and row untouched.
 
   * existing trades stay `READY` with `journal_id IS NULL`
   * existing capture command results stay exactly as stored
@@ -755,13 +755,13 @@ Why:
 
 Verification:
 
-* [ ] `SETTLED` is accepted after V3 and was rejected before V3.
-* [ ] `SETTLED` with `journal_id IS NULL` fails.
-* [ ] `READY` with a journal fails.
-* [ ] Two trades cannot share one journal.
-* [ ] Trade A cannot point `journal_id` at Trade B's journal.
-* [ ] `SETTLE_TRADE` is accepted as a command operation.
-* [ ] An unsupported operation still fails.
+* [x] `SETTLED` is accepted after V3 and was rejected before V3.
+* [x] `SETTLED` with `journal_id IS NULL` fails.
+* [x] `READY` with a journal fails.
+* [x] Two trades cannot share one journal.
+* [x] Trade A cannot point `journal_id` at Trade B's journal.
+* [x] `SETTLE_TRADE` is accepted as a command operation.
+* [x] An unsupported operation still fails.
 
 Engineering log:
 
@@ -782,21 +782,21 @@ What is being protected?
 * I9 requires that committed journals and postings cannot be silently modified through normal application operations.
 * Phase 2 already used this pattern: `command_result` has a trigger that refuses to overwrite a completed result.
 
-* [ ] Add a trigger function that rejects `UPDATE` and `DELETE`.
+* [x] Add a trigger function that rejects `UPDATE` and `DELETE`.
 
-* [ ] Attach it to:
+* [x] Attach it to:
 
   * `settlement_journal`
   * `posting`
   * `settlement_attempt`
 
-* [ ] Add a trade update guard.
+* [x] Add a trade update guard.
 
   * reject any change to the captured economic terms
   * reject any update to a row that is already `SETTLED`
   * allow exactly the `READY -> SETTLED` transition that also sets `journal_id`
 
-* [ ] Add a deferred constraint trigger that validates the journal shape at commit.
+* [x] Add a deferred constraint trigger that validates the journal shape at commit.
 
 Conceptually:
 
@@ -822,7 +822,7 @@ the two cash postings use the buyer and seller AUD accounts
 the two security postings use the buyer and seller accounts for exactly trade.security_id
 ```
 
-* [ ] Do not make the immutability triggers block test cleanup.
+* [x] Do not make the immutability triggers block test cleanup.
 
   * `TRUNCATE` does not fire row-level `UPDATE`/`DELETE` triggers, so the existing cleanup mechanism still works.
 
@@ -834,17 +834,17 @@ Why:
 
 Verification:
 
-* [ ] `UPDATE` and `DELETE` on a journal, posting and attempt all fail.
-* [ ] A journal committed with three postings fails at commit.
-* [ ] A journal whose cash legs do not net to zero fails at commit.
-* [ ] A journal whose amounts disagree with the trade terms fails at commit.
-* [ ] Reversing a posting direction fails at commit.
-* [ ] Cash postings to a non-AUD account fail at commit.
-* [ ] Security postings to an account whose asset is not `trade.security_id` fail at commit.
-* [ ] `READY -> SETTLED` with a journal succeeds.
-* [ ] Editing a settled trade fails.
-* [ ] Editing captured terms fails.
-* [ ] Test cleanup still truncates cleanly.
+* [x] `UPDATE` and `DELETE` on a journal, posting and attempt all fail.
+* [x] A journal committed with three postings fails at commit.
+* [x] A journal whose cash legs do not net to zero fails at commit.
+* [x] A journal whose amounts disagree with the trade terms fails at commit.
+* [x] Reversing a posting direction fails at commit.
+* [x] Cash postings to a non-AUD account fail at commit.
+* [x] Security postings to an account whose asset is not `trade.security_id` fail at commit.
+* [x] `READY -> SETTLED` with a journal succeeds.
+* [x] Editing a settled trade fails.
+* [x] Editing captured terms fails.
+* [x] Test cleanup still truncates cleanly.
 
 Engineering log:
 
@@ -860,7 +860,7 @@ Ready for 3.2.7 when:
 
 ## 3.2.7 Verify V3 and preserve Phase 1 and Phase 2 state
 
-* [ ] Update `AbstractPostgresIntegrationTest` cleanup.
+* [x] Update `AbstractPostgresIntegrationTest` cleanup.
 
 ```text
 TRUNCATE TABLE settlement_attempt, posting, settlement_journal,
@@ -869,16 +869,16 @@ TRUNCATE TABLE settlement_attempt, posting, settlement_journal,
 
 * All referencing tables are listed in one statement, so the foreign keys allow the truncate.
 
-* [ ] Update `PostgresStartupIntegrationTest`.
+* [x] Update `PostgresStartupIntegrationTest`.
 
   * applied migrations are V1, V2, V3
   * current version is 3
   * tables are `account`, `asset`, `command_result`, `flyway_schema_history`, `participant`, `posting`, `settlement_attempt`, `settlement_journal`, `trade`
   * `reconciliation` tables still do not exist
 
-* [ ] Add a V3 schema constraint integration test covering 3.2.2 to 3.2.6.
+* [x] Add a V3 schema constraint integration test covering 3.2.2 to 3.2.6.
 
-* [ ] Add a V2 -> V3 upgrade integration test.
+* [x] Add a V2 -> V3 upgrade integration test.
 
   * start with V1 and V2 only
   * load the Phase 1 seed data
@@ -896,11 +896,11 @@ Why:
 
 Verification:
 
-* [ ] V1 + V2 + V3 apply to a clean PostgreSQL database.
-* [ ] A V2 database upgrades to V3 without changing existing rows.
-* [ ] V3 constraints reject invalid settlement state.
-* [ ] All existing Phase 1 and Phase 2 tests still pass.
-* [ ] `./mvnw verify` passes.
+* [x] V1 + V2 + V3 apply to a clean PostgreSQL database.
+* [x] A V2 database upgrades to V3 without changing existing rows.
+* [x] V3 constraints reject invalid settlement state.
+* [x] All existing Phase 1 and Phase 2 tests still pass.
+* [x] `./mvnw verify` passes.
 
 Engineering log:
 
@@ -912,6 +912,8 @@ Ready for 3.3 when:
 * V3 is reproducible
 * existing Phase 1 and Phase 2 data survives the upgrade
 * database-level settlement guarantees work
+
+Section 3.2 is complete. Do not begin Section 3.3 until requested.
 
 ---
 
