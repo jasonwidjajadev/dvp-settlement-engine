@@ -2525,46 +2525,46 @@ Confirm the settlement engine is correct and complete before the concurrency, re
 
 ## 3.9.1 Run the complete build and test suite
 
-* [ ] Run:
+* [x] Run:
 
 ```bash
 ./mvnw clean verify
 ```
 
-* [ ] Confirm:
+* [x] Confirm:
 
 ```text
-Phase 1 tests                       PASS / FAIL
-Phase 2 tests                       PASS / FAIL
-Flyway V1 + V2 + V3                 PASS / FAIL
-V2 -> V3 upgrade                    PASS / FAIL
-Journal schema constraints          PASS / FAIL
-Posting schema constraints          PASS / FAIL
-Attempt schema constraints          PASS / FAIL
-Trade status/journal constraints    PASS / FAIL
-Deferred journal shape check        PASS / FAIL
-History immutability triggers       PASS / FAIL
-Settlement persistence              PASS / FAIL
-Trade locking                       PASS / FAIL
-Deterministic account locking       PASS / FAIL
-Due-date rule                       PASS / FAIL
-Insufficient cash                   PASS / FAIL
-Insufficient securities             PASS / FAIL
-Already settled                     PASS / FAIL
-Successful settlement               PASS / FAIL
-Durable settlement outcome          PASS / FAIL
-Settlement replay                   PASS / FAIL
-Settlement rollback                 PASS / FAIL
-Journal inspection                  PASS / FAIL
-Attempt inspection                  PASS / FAIL
-Command inspection                  PASS / FAIL
-Balance reconstruction              PASS / FAIL
-Conservation invariants             PASS / FAIL
-Maven verify                        PASS / FAIL
+Phase 1 tests                       PASS
+Phase 2 tests                       PASS
+Flyway V1 + V2 + V3                 PASS
+V2 -> V3 upgrade                    PASS
+Journal schema constraints          PASS
+Posting schema constraints          PASS
+Attempt schema constraints          PASS
+Trade status/journal constraints    PASS
+Deferred journal shape check        PASS
+History immutability triggers       PASS
+Settlement persistence              PASS
+Trade locking                       PASS
+Deterministic account locking       PASS
+Due-date rule                       PASS
+Insufficient cash                   PASS
+Insufficient securities             PASS
+Already settled                     PASS
+Successful settlement               PASS
+Durable settlement outcome          PASS
+Settlement replay                   PASS
+Settlement rollback                 PASS
+Journal inspection                  PASS
+Attempt inspection                  PASS
+Command inspection                  PASS
+Balance reconstruction              PASS
+Conservation invariants             PASS
+Maven verify                        PASS
 ```
 
-* [ ] Confirm the required Testcontainers tests actually executed.
-* [ ] Confirm no required test was skipped.
+* [x] Confirm the required Testcontainers tests actually executed.
+* [x] Confirm no required test was skipped.
 
 Engineering log:
 
@@ -2587,29 +2587,29 @@ Alice AUD 100000   Alice EQ1 0
 Bob   AUD 0        Bob   EQ1 10
 ```
 
-* [ ] Start PostgreSQL.
+* [x] Start PostgreSQL.
 
-* [ ] Start the application and let Flyway apply V3 to the existing database.
+* [x] Start the application and let Flyway apply V3 to the existing database.
 
-* [ ] Apply the seed to the demo database.
+* [x] Apply the seed to the demo database.
 
-* [ ] `GET /v1/accounts`.
+* [x] `GET /v1/accounts`.
 
-* [ ] `POST /v1/trades` with a due settlement date and `Idempotency-Key: capture-T-001`.
+* [x] `POST /v1/trades` with a due settlement date and `Idempotency-Key: capture-T-001`.
 
-* [ ] `POST /v1/trades/{id}/settle` with `Idempotency-Key: settle-T-001`.
+* [x] `POST /v1/trades/{id}/settle` with `Idempotency-Key: settle-T-001`.
 
-* [ ] `GET` the journal `Location`.
+* [x] `GET` the journal `Location`.
 
-* [ ] `GET /v1/trades/{id}`.
+* [x] `GET /v1/trades/{id}`.
 
-* [ ] `GET /v1/trades/{id}/attempts`.
+* [x] `GET /v1/trades/{id}/attempts`.
 
-* [ ] `GET /v1/commands/settle-T-001`.
+* [x] `GET /v1/commands/settle-T-001`.
 
-* [ ] `GET /v1/accounts`.
+* [x] `GET /v1/accounts`.
 
-* [ ] Repeat the settle request.
+* [x] Repeat the settle request.
 
 Expected:
 
@@ -2627,9 +2627,9 @@ one SETTLED attempt
 replay returns the original response
 ```
 
-* [ ] Document the walkthrough commands in `README.md` after they have been observed to work.
+* [x] Document the walkthrough commands in `README.md` after they have been observed to work.
 
-* [ ] Do not record local credentials.
+* [x] Do not record local credentials.
 
 Why:
 
@@ -2638,9 +2638,9 @@ Why:
 
 Verification:
 
-* [ ] The documented commands work as written.
-* [ ] Observed balances, trade state, journal and attempt are recorded.
-* [ ] Flyway upgraded the existing database to V3 in place.
+* [x] The documented commands work as written.
+* [x] Observed balances, trade state, journal and attempt are recorded.
+* [x] Flyway upgraded the existing database to V3 in place.
 
 Engineering log:
 
@@ -2654,11 +2654,11 @@ Ready for 3.9.3 when:
 
 ## 3.9.3 Review the repository
 
-* [ ] Inspect `git status`.
+* [x] Inspect `git status`.
 
-* [ ] Inspect new and modified files.
+* [x] Inspect new and modified files.
 
-* [ ] Confirm:
+* [x] Confirm:
 
   * V1 and V2 were not edited
   * V3 contains only settlement structures and the two approved extensions
@@ -2680,7 +2680,7 @@ Ready for 3.9.4 when:
 
 ## 3.9.4 Review the engineering log
 
-* [ ] Confirm the log contains Phase 3 work using the same numbering:
+* [x] Confirm the log contains Phase 3 work using the same numbering:
 
   * 3.1 baseline and settlement contract
   * 3.2 V3 schema
@@ -2691,7 +2691,7 @@ Ready for 3.9.4 when:
   * 3.7 settlement and inspection API
   * 3.8 financial invariants
 
-* [ ] Confirm each meaningful entry records:
+* [x] Confirm each meaningful entry records:
 
   * what happened
   * why
@@ -2703,9 +2703,9 @@ Ready for 3.9.4 when:
   * fixes
   * deviations and why
 
-* [ ] Keep failed attempts in the history.
+* [x] Keep failed attempts in the history.
 
-* [ ] Append the Phase 3 final verification result.
+* [x] Append the Phase 3 final verification result.
 
 Ready for 3.9.5 when:
 
@@ -2770,33 +2770,33 @@ Ready for 3.9.6 when:
 
 Phase 3 is complete only when:
 
-* [ ] Phase 1 and Phase 2 still pass.
-* [ ] C2 and the Phase 3 settlement contract were approved before implementation.
-* [ ] V3 applies to a clean database.
-* [ ] A V2 database upgrades to V3 without changing existing rows or balances.
-* [ ] The Alice/Bob settlement succeeds end to end.
-* [ ] Exactly one settlement journal is created.
-* [ ] Exactly four correct postings are created.
-* [ ] Four account balances are correct after settlement.
-* [ ] The trade becomes `SETTLED` and points at its journal.
-* [ ] The settlement command outcome is durable and replays identically.
-* [ ] A settlement attempt is recorded for every committed decision, and none for a replay.
-* [ ] Insufficient cash causes no financial movement and leaves the trade `READY`.
-* [ ] Insufficient securities causes no financial movement and leaves the trade `READY`.
-* [ ] A trade that is not due causes no financial movement.
-* [ ] A second settlement of the same trade cannot create a second journal.
-* [ ] The settlement path locks the trade, then the four accounts in ascending account-ID order.
-* [ ] Balances are validated only after the locks are held.
-* [ ] A technical failure before commit leaves no partial financial state.
-* [ ] Balance reconstruction matches stored balances.
-* [ ] Cash and securities are conserved.
-* [ ] No account can become negative.
-* [ ] Journals, postings and attempts cannot be modified through normal operations.
-* [ ] Journal, attempt and command inspection work through the API.
-* [ ] PostgreSQL integration tests pass.
-* [ ] `./mvnw clean verify` passes.
-* [ ] No secrets or generated build output are committed.
-* [ ] The engineering log accurately describes Phase 3.
+* [x] Phase 1 and Phase 2 still pass.
+* [x] C2 and the Phase 3 settlement contract were approved before implementation.
+* [x] V3 applies to a clean database.
+* [x] A V2 database upgrades to V3 without changing existing rows or balances.
+* [x] The Alice/Bob settlement succeeds end to end.
+* [x] Exactly one settlement journal is created.
+* [x] Exactly four correct postings are created.
+* [x] Four account balances are correct after settlement.
+* [x] The trade becomes `SETTLED` and points at its journal.
+* [x] The settlement command outcome is durable and replays identically.
+* [x] A settlement attempt is recorded for every committed decision, and none for a replay.
+* [x] Insufficient cash causes no financial movement and leaves the trade `READY`.
+* [x] Insufficient securities causes no financial movement and leaves the trade `READY`.
+* [x] A trade that is not due causes no financial movement.
+* [x] A second settlement of the same trade cannot create a second journal.
+* [x] The settlement path locks the trade, then the four accounts in ascending account-ID order.
+* [x] Balances are validated only after the locks are held.
+* [x] A technical failure before commit leaves no partial financial state.
+* [x] Balance reconstruction matches stored balances.
+* [x] Cash and securities are conserved.
+* [x] No account can become negative.
+* [x] Journals, postings and attempts cannot be modified through normal operations.
+* [x] Journal, attempt and command inspection work through the API.
+* [x] PostgreSQL integration tests pass.
+* [x] `./mvnw clean verify` passes.
+* [x] No secrets or generated build output are committed.
+* [x] The engineering log accurately describes Phase 3.
 
 Then stop.
 

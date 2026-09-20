@@ -104,6 +104,86 @@ Bob EQ1   = 10
 
 Nothing settles in Phase 2. The trade remains `READY`.
 
+### Settlement walkthrough
+
+These commands were run against local PostgreSQL 18.6 after Flyway reached V3. Start PostgreSQL and the application first, then seed:
+
+```bash
+docker compose --env-file .env up -d
+```
+
+```bash
+set -a
+source .env
+set +a
+./mvnw spring-boot:run
+```
+
+```bash
+docker exec -i dvp-postgres psql -U dvp -d dvp < scripts/seed-demo.sql
+```
+
+Inspect balances, capture Alice buying 10 EQ1 from Bob, settle the trade, follow the journal, and replay the settle command:
+
+```bash
+curl -sS http://localhost:8080/v1/accounts
+```
+
+```bash
+curl -sS -D - -X POST http://localhost:8080/v1/trades \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: capture-T-001' \
+  -d '{
+  "externalTradeId": "T-001",
+  "buyerId": "00000000-0000-0000-0000-000000000001",
+  "sellerId": "00000000-0000-0000-0000-000000000002",
+  "securityId": "00000000-0000-0000-0000-0000000000e1",
+  "quantity": 10,
+  "cashAmount": 50000,
+  "settlementDate": "2026-09-20"
+}'
+```
+
+```bash
+curl -sS -D - -X POST http://localhost:8080/v1/trades/<trade-id-from-Location>/settle \
+  -H 'Idempotency-Key: settle-T-001'
+```
+
+```bash
+curl -sS http://localhost:8080/v1/journals/<journal-id-from-Location>
+```
+
+```bash
+curl -sS http://localhost:8080/v1/trades/<trade-id-from-Location>
+```
+
+```bash
+curl -sS http://localhost:8080/v1/trades/<trade-id-from-Location>/attempts
+```
+
+```bash
+curl -sS http://localhost:8080/v1/commands/settle-T-001
+```
+
+```bash
+curl -sS http://localhost:8080/v1/accounts
+```
+
+Repeat the same settle `POST`. The replayed response is the original `201` with the same journal `Location`. Observed result:
+
+```text
+Trade SETTLED with journal id
+
+Alice AUD = 50000
+Alice EQ1 = 10
+Bob AUD   = 50000
+Bob EQ1   = 0
+
+one journal
+four postings
+one SETTLED attempt
+```
+
 ### OpenAPI / Swagger UI
 
 With the application running:

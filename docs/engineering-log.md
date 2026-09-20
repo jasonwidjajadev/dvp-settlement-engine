@@ -2313,6 +2313,131 @@ Deviations and corrections:
 - Section 3.8 is complete.
 - Stopped here. Section 3.9 was not started.
 
+## 3.9 Phase 3 verification
+
+No product functionality was added. Section 3.9 is verification, walkthrough, repository review and exit criteria only. Phase 4 was not started.
+
+### 3.9.1 Complete clean build and test suite
+
+- Ran `./mvnw clean verify`.
+  - Java: Temurin 21.0.3
+  - Maven Wrapper: 3.3.2 distributing Apache Maven 3.9.11
+  - PostgreSQL / Testcontainers: `postgres:18.6`, Testcontainers 2.0.5
+  - Flyway: 12.4.0; schema version V3 in tests
+  - Tests run: 200
+  - Failures: 0
+  - Errors: 0
+  - Skipped: 0
+  - Result: `BUILD SUCCESS`
+
+Required tests that executed include:
+
+```text
+Phase 1/2                         PostgresStartup, DatabaseConstraint, DemoSeed,
+                                  TradeCaptureSchema, FlywayV2Upgrade,
+                                  CaptureTradeService, TradeCaptureHttp
+Flyway V1+V2+V3                   FlywayV3Upgrade, PostgresStartup
+V2 -> V3 upgrade                  FlywayV3UpgradeIntegrationTest
+Journal/posting/attempt schema    SettlementSchemaIntegrationTest
+Trade status/journal              SettlementSchema, TradeSettlementPersistence
+Deferred journal shape            SettlementSchemaIntegrationTest
+History immutability              SettlementSchema, SettlementHistoryImmutability
+Settlement persistence            SettlementJournal/Attempt/AccountSettlement
+Trade + account locking           SettleTradeLockProtocolIntegrationTest
+Due-date / cash / securities      SettleTradeServiceIntegrationTest
+Already settled / success / replay / rollback
+                                  SettleTradeService, SettleTradeWriteRollback
+Inspection API                    SettlementHttpIntegrationTest
+Reconstruction / conservation     BalanceReconstruction, FinancialInvariant
+Maven verify                      ./mvnw clean verify
+```
+
+No required test was skipped.
+
+### 3.9.2 Alice/Bob settlement walkthrough
+
+Local PostgreSQL 18.6 was empty after `docker compose up`. Spring Boot was first started with Flyway target 2, then seeded, then restarted so Flyway applied only V3 in place.
+
+Observed Flyway history after the second start:
+
+```text
+1  V1__participants_assets_accounts.sql
+2  V2__trades_and_command_results.sql
+3  V3__settlement_journal_postings_attempts.sql
+```
+
+Log line: `Successfully applied 1 migration ... now at version v3`.
+
+Seeded balances were unchanged by the V3 upgrade:
+
+```text
+Alice AUD 100000 / 100000
+Alice EQ1      0 /      0
+Bob   AUD      0 /      0
+Bob   EQ1     10 /     10
+```
+
+HTTP walkthrough against `http://localhost:8080`:
+
+- `GET /v1/accounts` — starting balances as above
+- `POST /v1/trades` `Idempotency-Key: capture-T-001` — `201 READY`, `journalId` null
+- `POST /v1/trades/{id}/settle` `Idempotency-Key: settle-T-001` — `201`, `Location: /v1/journals/{id}`
+- `GET` journal — four postings (Bob AUD CREDIT 50000, Alice AUD DEBIT 50000, Alice EQ1 CREDIT 10, Bob EQ1 DEBIT 10)
+- `GET` trade — `SETTLED` with journal id
+- `GET` attempts — one `SETTLED` attempt, business date 2026-09-21
+- `GET /v1/commands/settle-T-001` — stored `201 SETTLE_TRADE` with the same journal location
+- `GET /v1/accounts` after settle and after replay:
+
+```text
+Alice AUD = 50000
+Alice EQ1 = 10
+Bob   AUD = 50000
+Bob   EQ1 = 0
+```
+
+- Replay body and Location identical to the first settle
+- Database: 1 journal, 4 postings, 1 SETTLED attempt
+- `/swagger-ui/index.html` `200`; `/v3/api-docs` includes the four Phase 3 paths
+- README settlement walkthrough updated after these commands were observed to work
+- No credentials recorded
+
+### 3.9.3 Repository review
+
+- `git status` before 3.9 doc updates: clean working tree; `.env` ignored; `target/` untracked
+- V1 last commit `953f06b` (1.5.6); V2 last commit `5afb6eb` (2.3). Neither file was edited in Phase 3
+- V3 is only settlement schema and the approved extra guarantees
+- No reconciliation table or schema
+- No Phase 4 concurrency/recovery/load tooling
+- Account writes remain relative `applyDelta`; no absolute setter or balance endpoint
+- Journal/posting repositories have insert and find only
+- Financial locking is PostgreSQL `FOR UPDATE`, not Java locks
+- No JPA, Hibernate ORM or Kafka
+- No speculative Phase 4 or Phase 5 product classes
+
+### 3.9.4 Engineering log review
+
+The log already contains 3.1 through 3.8 with the same numbering, including failures, fixes and deviations. This 3.9 section is the Phase 3 final verification result.
+
+### 3.9.5 Final repository structure
+
+The expected Phase 3 sketch is present, with these justified deviations:
+
+- Clock bean is `application/TimeConfiguration.java`, not `ClockConfiguration.java`
+- Extra Phase 3 types required by the approved design: `SettlementIntegrityException`, `LockedAccount`, `UnknownJournalException`, `UnknownCommandException`, `NonEmptyRequestBodyException`, `JournalResponse`, `CommandResultResponse`, `SettlementAttemptResponse`
+- Test-support `FinancialInvariantChecks` holds reconstruction/conservation SQL; it is not a product API
+- Phase 1/2 types remain (`AccountController`, capture identity, validation, Jackson config)
+
+### 3.9.6 Phase 3 exit criteria
+
+Every listed Phase 3 exit criterion passed. Phase 3 is complete.
+
+- Ran `./mvnw clean verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 200. Failures: 0. Errors: 0. Skipped: 0.
+- Section 3.9 is complete.
+- Stopped here. Phase 4 was not started. `docs/detailed-plan/phase-4.md` was not created.
+
+
 
 
 
