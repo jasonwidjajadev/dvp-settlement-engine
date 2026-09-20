@@ -1600,6 +1600,175 @@ Phase 2 is complete.
   - Result: BUILD SUCCESS. Tests run: 95, Failures: 0, Errors: 0, Skipped: 0.
 - No Phase 3 work.
 
+# Phase 3: Atomic Settlement and Financial Inspection
+
+## 3.1 Confirm Phase 2 and approve the settlement contract
+
+### 3.1.1 Inspect the completed Phase 2 repository
+
+- Inspected the completed Phase 2 repository before any settlement code.
+- `git status`: branch `main`, up to date with `origin/main`.
+  - Uncommitted change at inspection: `docs/detailed-plan/phase-3.md` only (OpenAPI baseline notes already in the Phase 3 plan).
+  - No uncommitted Java, SQL, Flyway, API or configuration changes.
+- Confirmed no settlement implementation exists.
+  - No `SETTLE`, journal, posting, attempt, `Clock` or `BusinessCalendar` types in `src/main/java`.
+  - `TradeStatus` is `READY` only.
+  - `Trade` has no `journalId`.
+  - `TradeResponse` has no `journalId`.
+  - `TradeRepository` has `findById`, `findByExternalTradeId` and `insertIfAbsent` only. No locking.
+  - `AccountRepository` is read-only: `findAll` / `findById`.
+  - `AssetRepository` is `findById` only. No lookup by code `AUD`.
+  - `CommandResultRepository.claim` hardcodes `CaptureRequestIdentity.OPERATION` (`CAPTURE_TRADE`).
+  - `CaptureRequestIdentity.encode` is private. Settlement will need to reuse that length-prefixed format rather than invent a second encoding.
+- Confirmed no V3 migration exists.
+  - Flyway files: `V1__participants_assets_accounts.sql`, `V2__trades_and_command_results.sql`.
+  - `trade_status_supported` allows `READY` only.
+  - `command_result_operation_supported` allows `CAPTURE_TRADE` only.
+  - Public tables: `account`, `asset`, `command_result`, `flyway_schema_history`, `participant`, `trade`.
+- Confirmed OpenAPI / Swagger baseline.
+  - `org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1` is a dependency.
+  - No springdoc properties in `application.yml`.
+  - No `@Operation`, `@ApiResponse` or `@Schema` annotations, and no custom OpenAPI YAML.
+  - `TradeCaptureHttpIntegrationTest.unmappedRootPathReturnsNotFoundWithoutHidingOpenApi` already asserts `GET /v3/api-docs` is `200` and includes `/v1/trades`, and `GET /swagger-ui/index.html` is `200`.
+  - `GET /` is `404` `NOT_FOUND` via `NoResourceFoundException`, distinct from `GET /v1/trades/{unknown-uuid}` `404` `UNKNOWN_TRADE`.
+- Phase 2 files Phase 3 must extend rather than replace:
+  - `CaptureTradeService` — `TransactionTemplate` claim / validate / persist / finalize pattern
+  - `CommandResultRepository`
+  - `CaptureRequestIdentity`
+  - `TradeRepository`
+  - `AccountRepository`
+  - `AssetRepository`
+  - `TradeStatus`
+  - `Trade` / `TradeResponse`
+  - `ApiExceptionHandler`
+  - `TradeController`
+  - `AbstractPostgresIntegrationTest` truncate list
+  - `PostgresStartupIntegrationTest` exact table and migration lists
+  - `DemoSeed` Alice/Bob/AUD/EQ1 identifiers
+- Unexpected differences from the original Phase 3 starting assumptions, already present in the repository:
+  - springdoc OpenAPI / Swagger was added after Phase 2 close-out. Controllers are discovered by convention only.
+  - Unmapped paths return `404` `NOT_FOUND`, not `500`.
+  - `docs/implementation-plan.md` still lists C2 as unresolved. That is expected until 3.1.2 is approved.
+- Ran `./mvnw verify`.
+  - Purpose: Phase 2 baseline before any Phase 3 code.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 95. Failures: 0. Errors: 0. Skipped: 0.
+- No settlement code, no V3, no production-behaviour change.
+- 3.1.2, 3.1.3 and 3.1.4 were presented for human approval and were not encoded.
+- Section 3.2 was not started.
+
+### 3.1.2 Approve the settlement due-date rule (C2)
+
+- Human approval recorded the following final C2 rule. No change from the proposal.
+- Business timezone: `Australia/Sydney`.
+- Business date is the current calendar date in that timezone. Whole dates only.
+- A trade is due when `settlementDate <= businessDate`.
+- A trade is not due when `settlementDate > businessDate`.
+- Overdue trades (`settlementDate < businessDate`) remain settleable.
+- No intraday cutoff, settlement window or batch rule.
+- The application exposes one injected `java.time.Clock` bean fixed to `Australia/Sydney`.
+- A `BusinessCalendar` component derives `businessDate()` from that clock.
+- Settlement code must not call `LocalDate.now()` directly.
+- Each committed settlement attempt records the evaluated business date.
+- `READY` and `SETTLED` remain the only trade states (ADR-011).
+- C2 is resolved.
+- No Java, SQL, Flyway or configuration was added.
+
+### 3.1.3 Approve the settlement command contract
+
+- Human approval recorded the Phase 3 extension of C3/C4, with one amendment.
+
+Approved request:
+
+- `POST /v1/trades/{id}/settle`
+- exactly one `Idempotency-Key`
+- no request body
+- settlement request identity is `SETTLE_TRADE` plus the trade id, using the shared length-prefixed canonical encoding
+
+Approved outcomes:
+
+| Situation | Result | Durable command outcome | Settlement attempt |
+| --- | --- | --- | --- |
+| New valid settlement | `201 Created` + `Location: /v1/journals/{journalId}` | yes | `SETTLED` |
+| Same key + same request | replay original result | already stored | none |
+| Same key + different request | `409` `IDEMPOTENCY_KEY_CONFLICT` | original unchanged | none |
+| New key + already settled trade | `409` `ALREADY_SETTLED` | yes | `ALREADY_SETTLED` |
+| Trade not due | `422` `NOT_DUE` | yes | `NOT_DUE` |
+| Insufficient buyer cash | `422` `INSUFFICIENT_CASH` | yes | `INSUFFICIENT_CASH` |
+| Insufficient seller securities | `422` `INSUFFICIENT_SECURITIES` | yes | `INSUFFICIENT_SECURITIES` |
+| Required account row missing | `500` `INTERNAL_ERROR` | no — rollback | none |
+| Unknown trade UUID | `404` `UNKNOWN_TRADE` | no — rollback | none |
+| Malformed UUID, missing/invalid key, or non-empty body | `400` | no | none |
+| Unexpected technical failure before commit | `500` `INTERNAL_ERROR` | no committed settlement result | none |
+
+- Replay records no new settlement attempt.
+- Every committed business decision records exactly one settlement attempt.
+- Error body remains `{code,message}`.
+
+Change from the original 3.1.3 proposal:
+
+- `MISSING_ACCOUNT` is not a settlement outcome.
+- A required settlement account being absent is an internal financial-state / data-integrity failure, not a client business rejection.
+- Do not record a `MISSING_ACCOUNT` settlement attempt.
+- Do not finalize a durable `422` command result.
+- Fail the transaction, roll back the command claim and every settlement write, and expose only the existing safe `500 INTERNAL_ERROR` at the HTTP boundary.
+
+- No Java, SQL, Flyway or configuration was added.
+
+### 3.1.4 Approve the settlement record model
+
+- Human approval recorded the settlement record model, with explicit extra database guarantees.
+
+Sign convention:
+
+- `DEBIT` decreases the account balance.
+- `CREDIT` increases the account balance.
+- `amount` is always positive. Direction carries the sign.
+- Successful settlement postings:
+  - buyer cash `DEBIT` `cashAmount`
+  - seller cash `CREDIT` `cashAmount`
+  - buyer security `CREDIT` `quantity`
+  - seller security `DEBIT` `quantity`
+- `DEBIT` / `CREDIT` are project-local balance-movement directions. They are not general-ledger / GAAP debit-credit semantics.
+
+Record shape:
+
+- A posting references an account and does not duplicate the asset.
+- One journal per trade (`settlement_journal.trade_id` unique).
+- `trade.journalId` points at that trade's settlement journal.
+- Settlement cash asset is the asset with code `AUD`.
+- Attempt vocabulary: `SETTLED`, `ALREADY_SETTLED`, `NOT_DUE`, `INSUFFICIENT_CASH`, `INSUFFICIENT_SECURITIES`.
+- `GET /v1/trades/{id}` gains `journalId`, `null` while `READY`.
+- Old durable command responses are never rewritten.
+
+Database-enforced guarantees:
+
+- exactly four postings per journal
+- each account at most once per journal
+- per-asset net movement within a journal is zero
+- posting amounts equal the captured trade terms
+- the four accounts belong to the trade's buyer and seller
+- `trade.journal_id` must reference the `settlement_journal` whose `trade_id` is that same trade. Trade A cannot point at Trade B's journal.
+- the two cash postings must use the buyer and seller AUD accounts
+- the two security postings must use the buyer and seller accounts for exactly `trade.security_id`, not merely any asset whose type is `SECURITY`
+- committed journals and postings reject `UPDATE` and `DELETE`
+- a `SETTLED` trade cannot be modified further
+- captured trade terms remain immutable
+
+Change from the original 3.1.4 proposal:
+
+- `MISSING_ACCOUNT` was removed from the attempt vocabulary.
+- The three extra same-trade journal, AUD cash-account and exact-security-account guarantees were added.
+
+- Later Phase 3 plan steps that still proposed `MISSING_ACCOUNT` were updated to match this approval. Section 3.2 was not implemented.
+- No Java, SQL, Flyway or configuration was added.
+
+- Section 3.1 is complete.
+- C2 is resolved.
+- The settlement command contract is approved.
+- The settlement record model is approved.
+- Stopped here. Section 3.2 was not started.
+
 
 
 

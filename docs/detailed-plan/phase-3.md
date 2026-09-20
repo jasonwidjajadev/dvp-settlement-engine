@@ -73,7 +73,10 @@ Phase 3 does not implement:
 * broader concurrency or throughput stress testing
 * reconciliation
 * load experiment
-* Docker packaging, OpenAPI/Swagger, CI or restricted database roles
+* OpenAPI/Swagger documentation polish
+* Docker packaging
+* CI
+* restricted database roles
 * Kafka
 * transactional outbox
 * frontend
@@ -121,16 +124,25 @@ What is the baseline?
   * `POST /v1/trades`, `GET /v1/trades/{id}`, `GET /v1/accounts`
   * `ApiExceptionHandler` with the `{code,message}` error body
   * shared Testcontainers PostgreSQL 18.6 support with per-test table cleanup
+  * basic springdoc OpenAPI / Swagger infrastructure
 
-* [ ] Inspect the repository tree.
+* [x] Confirm the existing OpenAPI baseline before adding endpoints.
 
-* [ ] Run `git status`.
+  * `springdoc-openapi-starter-webmvc-ui` is a dependency and is configured by convention only.
+  * `/v3/api-docs` and `/swagger-ui/index.html` work.
+  * The Phase 2 endpoints are discovered automatically from the existing controllers and DTOs.
+  * There are no `@Operation`, `@ApiResponse` or `@Schema` annotations, no custom OpenAPI YAML, and no grouping or documentation polish.
+  * Phase 3 controllers should be discovered the same way, with no springdoc-specific application code.
+
+* [x] Inspect the repository tree.
+
+* [x] Run `git status`.
 
   * Preserve existing work.
   * Confirm no settlement implementation already exists.
   * Confirm no V3 migration already exists.
 
-* [ ] Read:
+* [x] Read:
 
   * `docs/project-spec.md`
   * `docs/decisions.md`
@@ -139,7 +151,7 @@ What is the baseline?
   * `docs/detailed-plan/phase-2.md`
   * `docs/engineering-log.md`
 
-* [ ] Inspect the Phase 2 production code that Phase 3 must extend rather than replace.
+* [x] Inspect the Phase 2 production code that Phase 3 must extend rather than replace.
 
   * `CaptureTradeService` — the transaction pattern settlement will reuse
   * `CommandResultRepository` — `claim` currently hardcodes `CAPTURE_TRADE`
@@ -149,7 +161,7 @@ What is the baseline?
   * `TradeStatus` — `READY` only
   * `ApiExceptionHandler` — the existing status/code mapping
 
-* [ ] Inspect the existing test support.
+* [x] Inspect the existing test support.
 
   * `AbstractPostgresIntegrationTest` truncates `command_result, trade, account, participant, asset`
   * `PostgresStartupIntegrationTest` asserts the exact table list and the applied migration list
@@ -163,14 +175,14 @@ Why:
 
 Verification:
 
-* [ ] Run:
+* [x] Run:
 
 ```bash
 ./mvnw verify
 ```
 
-* [ ] Confirm the existing suite passes before Phase 3 code is written.
-* [ ] Record the actual test count and result.
+* [x] Confirm the existing suite passes before Phase 3 code is written.
+* [x] Record the actual test count and result.
 
 Engineering log:
 
@@ -203,31 +215,31 @@ due            settlementDate <= business date
 not due        settlementDate >  business date
 ```
 
-* [ ] Approve the business timezone.
+* [x] Approve the business timezone.
 
   * `Australia/Sydney`
   * The simulated market is Australian and the only asset currency is AUD.
   * Using a fixed business timezone keeps the rule reproducible regardless of the machine's default zone.
 
-* [ ] Approve date granularity only.
+* [x] Approve date granularity only.
 
   * No intraday settlement cutoff time.
   * No settlement windows or batch cycles (batching is a non-goal).
 
-* [ ] Approve overdue behaviour.
+* [x] Approve overdue behaviour.
 
   * A trade with `settlementDate < business date` is still settleable.
   * No ageing, penalty, cancellation or expiry state is introduced.
   * `READY` and `SETTLED` remain the only trade states (ADR-011).
 
-* [ ] Approve the clock source.
+* [x] Approve the clock source.
 
   * The application exposes one `java.time.Clock` bean fixed to the business timezone.
   * A small `BusinessCalendar` component derives `businessDate()` from that clock.
   * Tests can substitute a fixed clock, or derive expected dates from the same component.
   * Settlement code must never call `LocalDate.now()` directly.
 
-* [ ] Approve recording the evaluated business date on each settlement attempt.
+* [x] Approve recording the evaluated business date on each settlement attempt.
 
   * A recorded `NOT_DUE` decision is only explainable if the date it was judged against is stored.
 
@@ -239,7 +251,7 @@ Why:
 
 Verification:
 
-* [ ] Human approval resolves:
+* [x] Human approval resolves:
 
   * business timezone
   * due comparison
@@ -247,7 +259,7 @@ Verification:
   * clock injection
   * business-date recording
 
-* [ ] Any requested change is reflected in later Phase 3 steps before implementation.
+* [x] Any requested change is reflected in later Phase 3 steps before implementation.
 
 Engineering log:
 
@@ -269,7 +281,7 @@ What is being decided?
 * C4 already fixed the durable command-result policy for `CAPTURE_TRADE`.
 * Phase 3 introduces a second operation, so the same policy must be extended to `SETTLE_TRADE` rather than reinvented.
 
-* [ ] Approve the settlement request shape.
+* [x] Approve the settlement request shape.
 
 ```text
 POST /v1/trades/{id}/settle
@@ -281,7 +293,7 @@ no request body
 * A non-empty request body is rejected with `400`, so no unread field can appear to influence the command.
 * `Content-Type` is not required because there is no body.
 
-* [ ] Approve the settlement request identity.
+* [x] Approve the settlement request identity.
 
 ```text
 operation = SETTLE_TRADE
@@ -293,7 +305,7 @@ trade id
 * The identity uses the same length-prefixed encoding as `CaptureRequestIdentity`, so both operations share one canonical durable-identity format.
 * A capture key reused for settlement is a changed request, because the operation is part of the identity. One global namespace therefore stays unambiguous.
 
-* [ ] Approve the Phase 3 extension of C4.
+* [x] Approve the Phase 3 extension of C4.
 
 | Situation | Result | Durable command outcome | Settlement attempt |
 | --- | --- | --- | --- |
@@ -304,37 +316,39 @@ trade id
 | Trade not due | `422 Unprocessable Content` `NOT_DUE` | yes | `NOT_DUE` |
 | Buyer cash insufficient | `422` `INSUFFICIENT_CASH` | yes | `INSUFFICIENT_CASH` |
 | Seller securities insufficient | `422` `INSUFFICIENT_SECURITIES` | yes | `INSUFFICIENT_SECURITIES` |
-| A required account row does not exist | `422` `MISSING_ACCOUNT` | yes | `MISSING_ACCOUNT` |
+| A required account row does not exist | `500` `INTERNAL_ERROR` | no — the transaction rolls back | none |
 | Unknown trade UUID | `404 Not Found` `UNKNOWN_TRADE` | no — the transaction rolls back | none |
 | Malformed trade UUID, missing/invalid key, or non-empty body | `400 Bad Request` | no | none |
 | Unexpected technical failure before commit | `500 Internal Server Error` | no committed settlement result | none |
 | Unknown journal / command / trade on a GET | `404 Not Found` | read only | none |
 
-* [ ] Approve `201 Created` for a successful settlement.
+Approved change from the original proposal: a missing required settlement account is an internal data-integrity failure, not a client business rejection. It is not `MISSING_ACCOUNT`, not a settlement attempt, and not a durable `422`. The transaction fails, the command claim and every settlement write roll back, and HTTP exposes only the existing safe `500 INTERNAL_ERROR`.
+
+* [x] Approve `201 Created` for a successful settlement.
 
   * A successful settlement creates a new journal resource, so `Location` can address it.
   * This mirrors the Phase 2 capture contract and keeps the replayed body byte-identical.
   * Alternative considered: `200 OK` with the journal id only in the body. Rejected because the command genuinely creates a resource and `Location` makes the inspection chain self-describing.
 
-* [ ] Approve `409 ALREADY_SETTLED` for a second settlement under a new key.
+* [x] Approve `409 ALREADY_SETTLED` for a second settlement under a new key.
 
   * Business trade identity, not the command key, is what prevents the second settlement (ADR-009).
   * A conflict states plainly that a duplicate command was submitted, while still guaranteeing one journal.
   * Alternative considered: `200 OK` returning the existing journal. Rejected because it hides a duplicate settlement command behind a success response.
 
-* [ ] Approve that an unknown trade leaves no durable command outcome.
+* [x] Approve that an unknown trade leaves no durable command outcome.
 
   * The claim happens inside the settlement transaction, so an unknown trade must roll the claim back.
   * The consequence is explicit: a `404` leaves the key unused and reusable.
 
-* [ ] Approve the recorded settlement attempt policy.
+* [x] Approve the recorded settlement attempt policy.
 
   * Every committed settlement decision records exactly one settlement attempt.
   * A replay records nothing, because no new decision was taken.
   * A rolled-back transaction records nothing.
-  * `MISSING_ACCOUNT` extends the specification's example outcome list, because the service must behave correctly even though Phase 1 guarantees an account per participant/asset pair.
+  * A missing required account is not a committed settlement decision. It rolls back like any other unexpected failure.
 
-* [ ] Keep the existing `{code,message}` error body.
+* [x] Keep the existing `{code,message}` error body.
 
 Why:
 
@@ -344,8 +358,8 @@ Why:
 
 Verification:
 
-* [ ] Human approval resolves the settlement request shape, request identity, HTTP outcomes, durability and attempt policy.
-* [ ] No later Phase 3 step invents a conflicting retry policy.
+* [x] Human approval resolves the settlement request shape, request identity, HTTP outcomes, durability and attempt policy.
+* [x] No later Phase 3 step invents a conflicting retry policy.
 
 Engineering log:
 
@@ -365,7 +379,7 @@ What is being decided?
 
 * The shape of the permanent financial history, which invariants the database enforces, and the one additive change to a Phase 2 response.
 
-* [ ] Approve the posting sign convention.
+* [x] Approve the posting sign convention.
 
 ```text
 DEBIT   decreases the holder's balance
@@ -384,14 +398,15 @@ seller security  DEBIT   quantity
 * This is the specification's own four-posting description.
 * `amount` is always positive. The direction carries the sign.
 * A generated stored column holds the signed effect, so the sign rule exists in exactly one place and balance reconstruction is a plain sum.
+* `DEBIT` and `CREDIT` are project-local balance-movement directions. They are not general-ledger / GAAP debit-credit semantics. A GAAP asset-account debit would increase the balance; this project uses `DEBIT` to decrease it so the specification's posting labels produce the correct Alice/Bob money movement.
 
-* [ ] Approve that a posting does not store its own asset.
+* [x] Approve that a posting does not store its own asset.
 
   * A posting references an account, and the account already references exactly one asset.
   * Storing the asset twice would create a field that can disagree with itself.
   * Inspection joins the account to report the asset code.
 
-* [ ] Approve the trade-to-journal relationship.
+* [x] Approve the trade-to-journal relationship.
 
 ```text
 settlement_journal.trade_id  UNIQUE NOT NULL   -> at most one journal per trade
@@ -403,13 +418,13 @@ CHECK (status = 'SETTLED') = (journal_id IS NOT NULL)
 * `trade.journal_id` is in the specification's data model and makes the trade row self-describing.
 * The equality check makes `READY` without a journal and `SETTLED` with exactly one journal a database guarantee rather than a convention.
 
-* [ ] Approve the cash asset resolution rule.
+* [x] Approve the cash asset resolution rule.
 
   * The settlement cash asset is the asset with code `AUD`.
   * Multiple currencies and FX are non-goals, so a single supported settlement currency is sufficient.
   * The rule is explicit in one place, not spread through the settlement path.
 
-* [ ] Approve the settlement attempt vocabulary.
+* [x] Approve the settlement attempt vocabulary.
 
 ```text
 SETTLED
@@ -417,20 +432,24 @@ ALREADY_SETTLED
 NOT_DUE
 INSUFFICIENT_CASH
 INSUFFICIENT_SECURITIES
-MISSING_ACCOUNT
 ```
 
-* [ ] Approve the database-enforced settlement guarantees.
+Approved change from the original proposal: `MISSING_ACCOUNT` is not a settlement outcome.
+
+* [x] Approve the database-enforced settlement guarantees.
 
   * exactly four postings per journal, checked at commit
   * each account appears at most once per journal
   * per-asset net movement within a journal is zero
   * posting amounts equal the trade's `cash_amount` and `quantity`
   * the four accounts belong to the trade's buyer and seller
+  * `trade.journal_id` must reference the `settlement_journal` whose `trade_id` is that same trade. Trade A cannot point at Trade B's journal.
+  * the two cash postings must use the buyer and seller AUD accounts
+  * the two security postings must use the buyer and seller accounts for exactly `trade.security_id`, not merely any asset whose type is `SECURITY`
   * committed journals and postings reject `UPDATE` and `DELETE`
   * a `SETTLED` trade cannot be modified further, and captured terms cannot change
 
-* [ ] Approve the one additive Phase 2 response change.
+* [x] Approve the one additive Phase 2 response change.
 
   * `GET /v1/trades/{id}` gains `journalId`, `null` while `READY`.
   * This completes the inspection chain required by F5.
@@ -444,8 +463,8 @@ Why:
 
 Verification:
 
-* [ ] Human approval resolves sign convention, posting shape, trade-to-journal relationship, cash asset rule, attempt vocabulary, database guarantees and the trade response change.
-* [ ] Any requested change is reflected in 3.2 and 3.7 before implementation.
+* [x] Human approval resolves sign convention, posting shape, trade-to-journal relationship, cash asset rule, attempt vocabulary, database guarantees and the trade response change.
+* [x] Any requested change is reflected in 3.2 and 3.7 before implementation.
 
 Engineering log:
 
@@ -459,6 +478,8 @@ Ready for 3.2 when:
 * C2 is resolved
 * the settlement command contract is approved
 * the settlement record model is approved
+
+Section 3.1 is complete. Do not begin Section 3.2 until implementation of the approved contract is requested.
 
 ---
 
@@ -711,6 +732,7 @@ ALTER TABLE trade ADD CONSTRAINT trade_status_supported
   * foreign key to `settlement_journal`
   * unique `journal_id`
   * `CHECK ((status = 'SETTLED') = (journal_id IS NOT NULL))`
+  * `trade.journal_id` must reference the journal whose `trade_id` is that same trade, so Trade A cannot point at Trade B's journal
 
 * [ ] Extend the command-result operation constraint.
 
@@ -737,6 +759,7 @@ Verification:
 * [ ] `SETTLED` with `journal_id IS NULL` fails.
 * [ ] `READY` with a journal fails.
 * [ ] Two trades cannot share one journal.
+* [ ] Trade A cannot point `journal_id` at Trade B's journal.
 * [ ] `SETTLE_TRADE` is accepted as a command operation.
 * [ ] An unsupported operation still fails.
 
@@ -795,6 +818,8 @@ cash postings amount = trade.cash_amount
 security postings amount = trade.quantity
 buyer cash DEBIT, seller cash CREDIT
 buyer security CREDIT, seller security DEBIT
+the two cash postings use the buyer and seller AUD accounts
+the two security postings use the buyer and seller accounts for exactly trade.security_id
 ```
 
 * [ ] Do not make the immutability triggers block test cleanup.
@@ -814,6 +839,8 @@ Verification:
 * [ ] A journal whose cash legs do not net to zero fails at commit.
 * [ ] A journal whose amounts disagree with the trade terms fails at commit.
 * [ ] Reversing a posting direction fails at commit.
+* [ ] Cash postings to a non-AUD account fail at commit.
+* [ ] Security postings to an account whose asset is not `trade.security_id` fail at commit.
 * [ ] `READY -> SETTLED` with a journal succeeds.
 * [ ] Editing a settled trade fails.
 * [ ] Editing captured terms fails.
@@ -957,6 +984,8 @@ DEBIT
 CREDIT
 ```
 
+* `DEBIT` decreases the account balance. `CREDIT` increases it. These are project-local balance-movement directions, not general-ledger / GAAP debit-credit semantics.
+
 * [ ] Keep the types immutable records with no persistence annotations and no behaviour that mutates balances.
 
 Why:
@@ -989,7 +1018,6 @@ ALREADY_SETTLED
 NOT_DUE
 INSUFFICIENT_CASH
 INSUFFICIENT_SECURITIES
-MISSING_ACCOUNT
 ```
 
 * [ ] Create `SettlementAttempt`.
@@ -1563,21 +1591,22 @@ seller security  = seller + trade.security
 
 * [ ] If any account does not exist:
 
-  * record a `MISSING_ACCOUNT` attempt
-  * finalize `422 MISSING_ACCOUNT`
-  * commit the decision
-  * change no balances
+  * do not record a settlement attempt
+  * do not finalize a durable command result
+  * fail the transaction
+  * roll back the command claim and every settlement write
+  * expose only the existing safe `500 INTERNAL_ERROR` at the HTTP boundary
 
 Why:
 
 * Deterministic locking needs the account ids before any lock is taken, so resolution is a separate step from locking.
 * The four accounts are distinct by construction, because capture already rejects a self-trade and requires a `SECURITY` asset. Asserting it anyway means a future reference-data mistake cannot collapse two legs into one account and appear to balance.
-* Phase 1 guarantees an account per participant/asset pair, but the settlement path must still answer a missing account with a recorded decision rather than an unexplained failure.
+* Phase 1 guarantees an account per participant/asset pair. A missing required account is therefore an internal financial-state / data-integrity failure, not a client business rejection.
 
 Verification:
 
 * [ ] The Alice/Bob trade resolves to the four seeded accounts.
-* [ ] A trade whose buyer has no AUD account produces `MISSING_ACCOUNT` with no financial movement.
+* [ ] A trade whose buyer has no AUD account rolls back with a safe `500 INTERNAL_ERROR`, no settlement attempt, and no durable command result.
 * [ ] The resolution step performs no locking and no writes.
 
 Engineering log:
@@ -2213,7 +2242,6 @@ Ready for 3.7.5 when:
   * `422 NOT_DUE`
   * `422 INSUFFICIENT_CASH`
   * `422 INSUFFICIENT_SECURITIES`
-  * `422 MISSING_ACCOUNT`
 
 * [ ] Keep the single `{code,message}` error shape.
 
@@ -2287,19 +2315,42 @@ durable command replay
 
 * [ ] Confirm each rejection leaves balances, journals and postings untouched.
 
+* [ ] Confirm the generated OpenAPI document picked up the new endpoints automatically.
+
+  * `/v3/api-docs` contains:
+
+```text
+POST /v1/trades/{id}/settle
+GET  /v1/journals/{id}
+GET  /v1/trades/{id}/attempts
+GET  /v1/commands/{key}
+```
+
+* [ ] Do not add:
+
+  * `@Operation`, `@ApiResponse` or `@Schema` annotations
+  * examples or descriptions
+  * custom schemas
+  * custom OpenAPI YAML
+  * API grouping
+  * Swagger-specific application code
+
 Why:
 
 * The API is the product, so the guarantees must hold through HTTP and not only at the service layer.
 * Driving the whole chain in one test is what proves the inspection workflow in F5 actually connects.
+* The springdoc infrastructure already exists and discovers controllers by convention, so the only Phase 3 question is whether the new endpoints appear. Documentation polish belongs to the final project-polish phase.
 
 Verification:
 
 * [ ] The HTTP settlement integration test passes.
+* [ ] The four Phase 3 endpoints appear in `/v3/api-docs` with no annotation or configuration work.
 * [ ] `./mvnw verify` passes.
 
 Engineering log:
 
 * Record the HTTP workflow, the observed responses and the rejection cases.
+* Record that the new endpoints were discovered automatically and that no OpenAPI polish was added.
 
 Ready for 3.8 when:
 
