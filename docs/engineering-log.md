@@ -1404,6 +1404,161 @@ Business rejection codes:
 - No settlement, journal, or Section 2.7 walkthrough was added.
 - Stopped here. Section 2.7 was not started.
 
+## 2.7 Phase 2 verification
+
+Purpose: confirm Trade Capture is complete before settlement. No product features were added during this review. README walkthrough commands were documented after they were executed.
+
+### 2.7.1 Run the complete build and test suite
+
+- Ran `./mvnw clean verify` from a deleted `target/` directory.
+  - Java: Temurin 21.0.3, `JAVA_HOME` = `/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home`
+  - Maven Wrapper: 3.9.11
+  - Result: `BUILD SUCCESS`
+  - Tests run: 94. Failures: 0. Errors: 0. Skipped: 0.
+  - Testcontainers image: `postgres:18.6`
+  - Flyway on a clean test schema: `Successfully applied 2 migrations ... now at version v2`
+  - `FlywayV2UpgradeIntegrationTest`: V1-only database migrated to V2; Phase 1 balances unchanged.
+  - Server: PostgreSQL 18.6
+  - Required Testcontainers tests executed. None were skipped.
+  - Spring Boot repackaged the executable jar.
+
+```text
+Phase 1 tests                    PASS
+Flyway V1 + V2                   PASS
+Trade schema constraints         PASS
+Command-result constraints       PASS
+Reference-data reads             PASS
+Trade persistence                PASS
+Command persistence              PASS
+Trade Capture transaction        PASS
+Idempotent replay                PASS
+Capture rollback                 PASS
+HTTP capture                     PASS
+Trade read-back                  PASS
+Account inspection               PASS
+Account balances unchanged       PASS
+Maven verify                     PASS
+```
+
+### 2.7.2 Run the minimal Trade Capture walkthrough
+
+- Started PostgreSQL with `docker compose --env-file .env up -d`.
+  - Recreated `dvp-postgres` to the current `postgres:18.6` image.
+  - Server: PostgreSQL 18.6. Flyway history was still V1 only.
+- Exported `.env` and ran `./mvnw spring-boot:run`.
+  - Flyway: current version 1, then `Migrating schema "public" to version "2 - trades and command results"`.
+  - Now at version v2.
+  - Tomcat: port 8080.
+- Applied `scripts/seed-demo.sql`.
+  - All three inserts reported `INSERT 0 0` (Alice/Bob/accounts already present; balances not reset).
+- `GET /v1/accounts` → `200`. Starting balances:
+  - Alice AUD 100000/100000
+  - Alice EQ1 0/0
+  - Bob AUD 0/0
+  - Bob EQ1 10/10
+- `POST /v1/trades` with `Idempotency-Key: capture-T-001` and the approved T-001 body.
+  - `201 Created`
+  - `Location: /v1/trades/a490fda8-9982-47d5-80ee-16a5f7347653`
+  - Body: `T-001`, Alice, Bob, EQ1, quantity 10, cashAmount 50000, settlementDate 2026-09-20, `READY`
+- `GET` that Location → `200`, same terms and `READY`.
+- Repeated the same POST → `201`, identical body and Location.
+- `GET /v1/accounts` again: every opening/current balance unchanged.
+- PostgreSQL: one `trade` row, one `command_result` row.
+- Stopped the application. Nothing settled.
+- Added the same commands to `README.md` after they were observed to work.
+
+### 2.7.3 Review the repository
+
+- `git status` before this 2.7 documentation update: branch `main`, ahead of `origin/main` by 5 commits, working tree clean.
+- V1 was not edited. Last change remains `953f06b` (1.5.6).
+- V2 contains only `trade` and `command_result`.
+- No settlement/journal/posting schema.
+- `AccountRepository` still has `findAll` / `findById` only. No account write API.
+- `git check-ignore` confirms `.env` and `target/` are ignored. `git ls-files` does not contain `.env` or `target/`.
+- `.env.example` is tracked and still uses placeholders (`change-me`).
+- Confirmed absent from `pom.xml` and production Java: JPA, Hibernate ORM, Kafka, H2, settlement services.
+- Hibernate Validator remains only as the Bean Validation implementation from `spring-boot-starter-validation`.
+- `SETTLED` appears only as a rejected schema-constraint fixture in tests, not as a product status.
+- No Phase 3 classes.
+
+### 2.7.4 Review the engineering log
+
+- Present: 2.1 baseline/contract, 2.2 domain/API types, 2.3 V2 schema, 2.4 JDBC persistence, 2.5 capture service, 2.6 REST API.
+- Corrections kept in history:
+  - 2.3 Java `strip()` whitespace vs `btrim`
+  - 2.4 unambiguous `CaptureRequestIdentity` and exact finalize
+  - 2.5 error-code names and removal of the production fail-once hook
+  - 2.6 Tomcat trimming of `Idempotency-Key` OWS
+- Failures kept include the `@ConditionalOnBean` service skip, CGLIB `private final` decorator, and space-prefixed HTTP key.
+- This section is the Phase 2 final verification result.
+
+### 2.7.5 Review the final repository structure
+
+Actual production shape:
+
+```text
+src/main/java/com/jasonwidjaja/dvp/
+├── DvpApplication.java
+├── api/
+│   ├── TradeController.java
+│   ├── AccountController.java
+│   ├── ApiExceptionHandler.java
+│   ├── IdempotencyKey.java
+│   └── DTOs, Jackson, validation
+├── application/
+│   ├── CaptureTradeService.java
+│   └── CommandOutcome.java
+├── domain/
+│   ├── Phase 1 types
+│   ├── TradeTerms.java, Trade.java, TradeStatus.java
+│   ├── CaptureCommand.java
+│   ├── CaptureRequestIdentity.java
+│   └── CommandResult.java
+└── persistence/
+    ├── AccountRepository.java
+    ├── ParticipantRepository.java
+    ├── AssetRepository.java
+    ├── TradeRepository.java
+    └── CommandResultRepository.java
+
+src/main/resources/db/migration/
+├── V1__participants_assets_accounts.sql
+└── V2__trades_and_command_results.sql
+```
+
+Justified differences from the 2.7 plan sketch:
+
+- `CaptureCommand`, `CaptureRequestIdentity`, and `CommandResult` live in `domain/`, not `application/`.
+  - They are immutable capture types, not the orchestration service.
+- Extra API types exist because 2.2/2.6 needed DTOs, Bean Validation, Jackson integer rules, and C3 key checking.
+
+### 2.7.6 Confirm Phase 2 exit criteria
+
+- Phase 1 still passes.
+- V2 applies to a clean database.
+- A V1 database upgrades to V2 without changing existing balances (automated test and this local walkthrough).
+- A valid matched trade can be captured as `READY`.
+- Captured economic terms cannot be silently overwritten.
+- Invalid trades are rejected (`400` request-level, `422` business).
+- Same external reference + different terms cannot create a second trade.
+- Same idempotency key + same request returns the original outcome.
+- Same idempotency key + different request is rejected.
+- Business rejection replay follows C4.
+- Trade and command outcome commit together.
+- Technical failure before commit rolls both back.
+- Trade and accounts can be read through the API.
+- Trade Capture leaves every account balance unchanged.
+- PostgreSQL integration tests pass.
+- `./mvnw clean verify` passes: 94 tests, 0 skipped.
+- No secrets or generated build output are committed.
+- This engineering log describes Phase 2, including failures and corrections.
+
+Phase 2 is complete.
+
+- Did not implement settlement.
+- Did not create `docs/detailed-plan/phase-3.md`.
+- Stopped here.
+
 
 
 

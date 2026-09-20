@@ -56,6 +56,54 @@ Run the full test suite:
 ./mvnw clean verify
 ```
 
+### Trade Capture walkthrough
+
+After PostgreSQL is running and `.env` is exported, start the application, then seed the demo participants and accounts:
+
+```bash
+./mvnw spring-boot:run
+```
+
+```bash
+docker exec -i dvp-postgres psql -U dvp -d dvp < scripts/seed-demo.sql
+```
+
+Inspect balances, capture Alice buying 10 EQ1 from Bob, read the trade back, and retry the same command:
+
+```bash
+curl -sS http://localhost:8080/v1/accounts
+```
+
+```bash
+curl -sS -D - -X POST http://localhost:8080/v1/trades \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: capture-T-001' \
+  -d '{
+  "externalTradeId": "T-001",
+  "buyerId": "00000000-0000-0000-0000-000000000001",
+  "sellerId": "00000000-0000-0000-0000-000000000002",
+  "securityId": "00000000-0000-0000-0000-0000000000e1",
+  "quantity": 10,
+  "cashAmount": 50000,
+  "settlementDate": "2026-09-20"
+}'
+```
+
+```bash
+curl -sS http://localhost:8080/v1/trades/<trade-id-from-Location>
+```
+
+Repeat the same `POST`. The replayed response is the original `201`. Account balances stay:
+
+```text
+Alice AUD = 100000
+Alice EQ1 = 0
+Bob AUD   = 0
+Bob EQ1   = 10
+```
+
+Nothing settles in Phase 2. The trade remains `READY`.
+
 ### Environment files
 
 - `.env.example`
