@@ -106,14 +106,16 @@ class CaptureTradeRequestJsonTest {
                 10,
                 50000,
                 LocalDate.of(2026, 9, 20),
-                TradeStatus.READY);
+                TradeStatus.READY,
+                null);
         ErrorResponse error = new ErrorResponse("UNKNOWN_PARTICIPANT", "Buyer does not exist");
 
         assertThat(json.writeValueAsString(trade))
                 .contains("\"externalTradeId\":\"T-001\"")
                 .contains("\"buyerId\":\"00000000-0000-0000-0000-000000000001\"")
                 .contains("\"cashAmount\":50000")
-                .contains("\"status\":\"READY\"");
+                .contains("\"status\":\"READY\"")
+                .contains("\"journalId\":null");
         assertThat(json.writeValueAsString(error))
                 .contains("\"code\":\"UNKNOWN_PARTICIPANT\"")
                 .contains("\"message\":\"Buyer does not exist\"");

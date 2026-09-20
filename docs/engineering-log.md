@@ -2133,6 +2133,117 @@ Deviations and corrections:
 - Section 3.6 is complete.
 - Stopped here. Section 3.7 was not started.
 
+## 3.7 Settlement and financial inspection API
+
+Settlement and inspection are now reachable over HTTP. Controllers translate requests into existing services and repositories. They do not contain SQL, locking, balance validation, transaction logic or idempotency persistence.
+
+Observed Alice/Bob HTTP workflow (due T-001, 10 EQ1 for 50000):
+
+```text
+GET  /v1/accounts
+POST /v1/trades                         capture-T-001 → 201 READY, journalId null
+POST /v1/trades/{id}/settle             settle-T-001 → 201, Location /v1/journals/{id}
+GET  Location                           one journal, four postings
+GET  /v1/trades/{id}                    SETTLED with journal id
+GET  /v1/trades/{id}/attempts           one SETTLED attempt
+GET  /v1/commands/settle-T-001          stored 201 + journal location
+GET  /v1/accounts                       Alice AUD 50000, Alice EQ1 10, Bob AUD 50000, Bob EQ1 0
+replay settle-T-001                     identical status, body and Location; balances unchanged
+```
+
+### 3.7.1 Create `POST /v1/trades/{id}/settle`
+
+- Added `POST /v1/trades/{id}/settle` on `TradeController`.
+- Requires exactly one `Idempotency-Key` via existing `IdempotencyKey.requireExactlyOne`.
+- No request body. A non-empty body is `400 INVALID_REQUEST`.
+- Builds `SettleCommand` and returns `SettleTradeService` status, stored JSON and `Location`.
+- Missing, empty, duplicate or too-long keys are `400 INVALID_IDEMPOTENCY_KEY`.
+- Malformed trade UUID is `400 INVALID_REQUEST`.
+- Replay of a successful settle returns the identical `201` body and journal `Location`.
+
+### 3.7.2 Create `GET /v1/journals/{id}`
+
+- Added `JournalController` with `GET /v1/journals/{id}` only. No journal or posting write API.
+- Response: `id`, `tradeId`, `settledAt`, `postings[]` with `id`, `accountId`, participant `{id,name}`, asset `{id,code,type}`, `direction`, `amount`.
+- Postings use `SettlementJournalRepository` order (`asset.code`, `direction`, `account_id`).
+- Alice/Bob journal:
+
+```text
+Bob AUD CREDIT 50000
+Alice AUD DEBIT 50000
+Alice EQ1 CREDIT 10
+Bob EQ1 DEBIT 10
+```
+
+- Unknown valid UUID → `404 UNKNOWN_JOURNAL` `"Journal does not exist"`.
+- Malformed UUID → `400 INVALID_REQUEST`.
+- `signedAmount` is not exposed.
+
+### 3.7.3 Create `GET /v1/trades/{id}/attempts`
+
+- Added `GET /v1/trades/{id}/attempts` returning `SettlementAttemptResponse` in decision order: `id`, `outcome`, `journalId`, `businessDate`, `decidedAt`, `commandKey`.
+- Known trade with no attempts → `[]`.
+- Unknown trade → `404 UNKNOWN_TRADE`.
+- Added `journalId` to `TradeResponse`: `null` while `READY`, journal id once `SETTLED`.
+- `GET /v1/commands/{key}` still embeds the stored `command_result.response_body` as parsed JSON and does not rewrite old rows.
+
+### 3.7.4 Create `GET /v1/commands/{key}`
+
+- Added `CommandController`.
+- Response: `commandKey`, `operation`, `httpStatus`, `location`, `response` (parsed JSON, not an escaped string).
+- Only completed results are readable.
+- Key format uses the same `IdempotencyKey` rules.
+- `request_identity` is not exposed.
+- Capture key returns stored `201` + trade location.
+- Settlement key returns stored `201` + journal location.
+- Durable rejection (e.g. `409 ALREADY_SETTLED`) returns the stored outcome.
+- Unknown key → `404 UNKNOWN_COMMAND` `"Command does not exist"`.
+
+### 3.7.5 Extend API error handling for settlement
+
+- Added `UnknownJournalException` → `404 UNKNOWN_JOURNAL`.
+- Added `UnknownCommandException` → `404 UNKNOWN_COMMAND`.
+- Phase 2 mappings unchanged (`INVALID_IDEMPOTENCY_KEY`, `UNKNOWN_TRADE`, `MALFORMED_REQUEST`, `INVALID_REQUEST`, `UNSUPPORTED_MEDIA_TYPE`, `NOT_FOUND`, `INTERNAL_ERROR`).
+- Service-produced settlement outcomes are returned as stored, not remapped by `ApiExceptionHandler`:
+  - `409 IDEMPOTENCY_KEY_CONFLICT`
+  - `409 ALREADY_SETTLED`
+  - `422 NOT_DUE`
+  - `422 INSUFFICIENT_CASH`
+  - `422 INSUFFICIENT_SECURITIES`
+- Missing required account remains `SettlementIntegrityException` → `500 INTERNAL_ERROR` `"An unexpected error occurred"`. No durable command result.
+- `DataIntegrityViolationException` with constraint/trigger names maps to the same safe `500`. Message and body contain no SQL, credentials, constraint names, trigger names or stack traces.
+
+### 3.7.6 Verify the HTTP settlement workflow
+
+- Added `SettlementHttpIntegrationTest` against Testcontainers PostgreSQL 18.6.
+- Workflow proved: one journal, four postings, balances moved exactly once, trade `SETTLED` with journal id, one `SETTLED` attempt, identical replay.
+- HTTP rejections leave financial state unchanged:
+  - already settled under a new key
+  - not due
+  - insufficient cash
+  - insufficient securities
+  - unknown trade
+  - reused key against a different trade
+- `/v3/api-docs` automatically contains:
+  - `POST /v1/trades/{id}/settle`
+  - `GET /v1/journals/{id}`
+  - `GET /v1/trades/{id}/attempts`
+  - `GET /v1/commands/{key}`
+- No `@Operation`, `@ApiResponse`, `@Schema`, examples, custom YAML, grouping or Swagger-specific application code.
+
+Deviations and corrections:
+
+- New capture command-result bodies now include `"journalId":null` because `CaptureTradeService` serializes `TradeResponse.from()`. That keeps POST capture and `GET /v1/trades/{id}` equal for `READY` trades. `GET /v1/commands/{key}` still returns the stored JSON as-is and never rewrites an existing `command_result` row.
+- Settle rejects a non-empty body by reading `HttpServletRequest` instead of declaring `@RequestBody`, so OpenAPI does not invent a settle request schema and the controller still contains no settlement decision logic.
+- A real deferred journal-shape failure at HTTP commit is not forced through the success path. HTTP coverage uses `@MockitoBean SettleTradeService` throwing `DataIntegrityViolationException` with a constraint/trigger name; V3 already proves the trigger at commit in 3.2.
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 190. Failures: 0. Errors: 0. Skipped: 0.
+- Section 3.7 is complete.
+- Stopped here. Section 3.8 was not started.
+
+
 
 
 

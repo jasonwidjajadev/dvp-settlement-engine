@@ -2054,19 +2054,19 @@ GET  /v1/commands/{key}
 
 ## 3.7.1 Create `POST /v1/trades/{id}/settle`
 
-* [ ] Add the endpoint to `TradeController`.
+* [x] Add the endpoint to `TradeController`.
 
-* [ ] Require exactly one `Idempotency-Key`, reusing the existing `IdempotencyKey` check.
+* [x] Require exactly one `Idempotency-Key`, reusing the existing `IdempotencyKey` check.
 
-* [ ] Reject a non-empty request body with `400`.
+* [x] Reject a non-empty request body with `400`.
 
-* [ ] Build a `SettleCommand` from the path id and the key.
+* [x] Build a `SettleCommand` from the path id and the key.
 
-* [ ] Call `SettleTradeService`.
+* [x] Call `SettleTradeService`.
 
-* [ ] Return the service's status, stored JSON body and `Location` where present.
+* [x] Return the service's status, stored JSON body and `Location` where present.
 
-* [ ] Keep out of the controller:
+* [x] Keep out of the controller:
 
   * SQL
   * transaction management
@@ -2082,11 +2082,11 @@ Why:
 
 Verification:
 
-* [ ] A valid settle request settles the trade and returns `201` with the journal `Location`.
-* [ ] A replay returns the identical response.
-* [ ] A missing, duplicated or malformed key returns `400`.
-* [ ] A non-empty body returns `400`.
-* [ ] A malformed trade UUID returns `400`.
+* [x] A valid settle request settles the trade and returns `201` with the journal `Location`.
+* [x] A replay returns the identical response.
+* [x] A missing, duplicated or malformed key returns `400`.
+* [x] A non-empty body returns `400`.
+* [x] A malformed trade UUID returns `400`.
 
 Engineering log:
 
@@ -2100,9 +2100,9 @@ Ready for 3.7.2 when:
 
 ## 3.7.2 Create `GET /v1/journals/{id}`
 
-* [ ] Add a journal controller.
+* [x] Add a journal controller.
 
-* [ ] Return the journal with its postings.
+* [x] Return the journal with its postings.
 
 ```text
 id
@@ -2117,13 +2117,13 @@ postings[]
     amount
 ```
 
-* [ ] Return the postings in the repository's deterministic order.
+* [x] Return the postings in the repository's deterministic order.
 
-* [ ] Return `404 UNKNOWN_JOURNAL` for a valid unknown UUID.
+* [x] Return `404 UNKNOWN_JOURNAL` for a valid unknown UUID.
 
-* [ ] Return `400` for a malformed UUID.
+* [x] Return `400` for a malformed UUID.
 
-* [ ] Do not expose any write operation on journals or postings.
+* [x] Do not expose any write operation on journals or postings.
 
 Why:
 
@@ -2132,9 +2132,9 @@ Why:
 
 Verification:
 
-* [ ] The journal returned by a settlement's `Location` contains exactly four postings.
-* [ ] Directions and amounts match the approved convention.
-* [ ] Unknown and malformed ids behave as approved.
+* [x] The journal returned by a settlement's `Location` contains exactly four postings.
+* [x] Directions and amounts match the approved convention.
+* [x] Unknown and malformed ids behave as approved.
 
 Engineering log:
 
@@ -2148,9 +2148,9 @@ Ready for 3.7.3 when:
 
 ## 3.7.3 Create `GET /v1/trades/{id}/attempts`
 
-* [ ] Add the endpoint to `TradeController`.
+* [x] Add the endpoint to `TradeController`.
 
-* [ ] Return the recorded attempts in decision order.
+* [x] Return the recorded attempts in decision order.
 
 ```text
 id
@@ -2161,11 +2161,11 @@ decidedAt
 commandKey
 ```
 
-* [ ] Return an empty list for a known trade with no attempts.
+* [x] Return an empty list for a known trade with no attempts.
 
-* [ ] Return `404 UNKNOWN_TRADE` for a valid unknown trade id.
+* [x] Return `404 UNKNOWN_TRADE` for a valid unknown trade id.
 
-* [ ] Add `journalId` to the trade response from `GET /v1/trades/{id}`.
+* [x] Add `journalId` to the trade response from `GET /v1/trades/{id}`.
 
 Why:
 
@@ -2174,11 +2174,11 @@ Why:
 
 Verification:
 
-* [ ] A rejected settlement is visible as an attempt with the expected outcome and business date.
-* [ ] A settled trade shows a `SETTLED` attempt linked to its journal.
-* [ ] A captured but never-settled trade returns an empty list.
-* [ ] An unknown trade returns `404`.
-* [ ] `GET /v1/trades/{id}` returns `null` for `journalId` while `READY` and the journal id once `SETTLED`.
+* [x] A rejected settlement is visible as an attempt with the expected outcome and business date.
+* [x] A settled trade shows a `SETTLED` attempt linked to its journal.
+* [x] A captured but never-settled trade returns an empty list.
+* [x] An unknown trade returns `404`.
+* [x] `GET /v1/trades/{id}` returns `null` for `journalId` while `READY` and the journal id once `SETTLED`.
 
 Engineering log:
 
@@ -2192,9 +2192,9 @@ Ready for 3.7.4 when:
 
 ## 3.7.4 Create `GET /v1/commands/{key}`
 
-* [ ] Add a command controller.
+* [x] Add a command controller.
 
-* [ ] Return the durable command outcome.
+* [x] Return the durable command outcome.
 
 ```text
 commandKey
@@ -2204,13 +2204,13 @@ location
 response   (the stored body as JSON)
 ```
 
-* [ ] Embed the stored body as parsed JSON rather than as an escaped string.
+* [x] Embed the stored body as parsed JSON rather than as an escaped string.
 
-* [ ] Return `404 UNKNOWN_COMMAND` for an unknown key.
+* [x] Return `404 UNKNOWN_COMMAND` for an unknown key.
 
-* [ ] Apply the same key format rules the commands use.
+* [x] Apply the same key format rules the commands use.
 
-* [ ] Do not expose `request_identity`.
+* [x] Do not expose `request_identity`.
 
 Why:
 
@@ -2220,11 +2220,11 @@ Why:
 
 Verification:
 
-* [ ] A capture key returns its stored `201` outcome.
-* [ ] A settlement key returns its stored `201` outcome and journal location.
-* [ ] A durable business rejection returns its stored `422` or `409` outcome.
-* [ ] An unknown key returns `404`.
-* [ ] The response never contains the request identity.
+* [x] A capture key returns its stored `201` outcome.
+* [x] A settlement key returns its stored `201` outcome and journal location.
+* [x] A durable business rejection returns its stored `422` or `409` outcome.
+* [x] An unknown key returns `404`.
+* [x] The response never contains the request identity.
 
 Engineering log:
 
@@ -2238,14 +2238,14 @@ Ready for 3.7.5 when:
 
 ## 3.7.5 Extend API error handling for settlement
 
-* [ ] Add handling for the new read failures.
+* [x] Add handling for the new read failures.
 
   * `404 UNKNOWN_JOURNAL`
   * `404 UNKNOWN_COMMAND`
 
-* [ ] Keep the existing Phase 2 mappings unchanged.
+* [x] Keep the existing Phase 2 mappings unchanged.
 
-* [ ] Keep service-produced settlement outcomes exactly as the service recorded them.
+* [x] Keep service-produced settlement outcomes exactly as the service recorded them.
 
   * `409 IDEMPOTENCY_KEY_CONFLICT`
   * `409 ALREADY_SETTLED`
@@ -2253,9 +2253,9 @@ Ready for 3.7.5 when:
   * `422 INSUFFICIENT_CASH`
   * `422 INSUFFICIENT_SECURITIES`
 
-* [ ] Keep the single `{code,message}` error shape.
+* [x] Keep the single `{code,message}` error shape.
 
-* [ ] Never expose SQL, constraint names, trigger names, credentials or stack traces.
+* [x] Never expose SQL, constraint names, trigger names, credentials or stack traces.
 
   * A deferred constraint failure surfaces at commit and must map to a safe `500`.
 
@@ -2266,10 +2266,10 @@ Why:
 
 Verification:
 
-* [ ] Each new `404` returns the approved shape.
-* [ ] Every settlement business outcome is returned as recorded.
-* [ ] A forced commit-time constraint failure returns a safe `500`.
-* [ ] No error body contains SQL, credentials or a constraint or trigger name.
+* [x] Each new `404` returns the approved shape.
+* [x] Every settlement business outcome is returned as recorded.
+* [x] A forced commit-time constraint failure returns a safe `500`.
+* [x] No error body contains SQL, credentials or a constraint or trigger name.
 
 Engineering log:
 
@@ -2285,23 +2285,23 @@ Ready for 3.7.6 when:
 
 Using the real Spring Boot application and Testcontainers PostgreSQL:
 
-* [ ] `GET /v1/accounts`.
+* [x] `GET /v1/accounts`.
 
-* [ ] `POST /v1/trades` to capture the Alice/Bob trade.
+* [x] `POST /v1/trades` to capture the Alice/Bob trade.
 
-* [ ] `POST /v1/trades/{id}/settle`.
+* [x] `POST /v1/trades/{id}/settle`.
 
-* [ ] `GET` the returned journal `Location`.
+* [x] `GET` the returned journal `Location`.
 
-* [ ] `GET /v1/trades/{id}`.
+* [x] `GET /v1/trades/{id}`.
 
-* [ ] `GET /v1/trades/{id}/attempts`.
+* [x] `GET /v1/trades/{id}/attempts`.
 
-* [ ] `GET /v1/commands/{settlement key}`.
+* [x] `GET /v1/commands/{settlement key}`.
 
-* [ ] `GET /v1/accounts` again.
+* [x] `GET /v1/accounts` again.
 
-* [ ] Retry the same settle request.
+* [x] Retry the same settle request.
 
 Verify:
 
@@ -2314,7 +2314,7 @@ one SETTLED attempt
 durable command replay
 ```
 
-* [ ] Test the approved rejection cases over HTTP.
+* [x] Test the approved rejection cases over HTTP.
 
   * already settled under a new key
   * not due
@@ -2323,9 +2323,9 @@ durable command replay
   * unknown trade
   * reused key against a different trade
 
-* [ ] Confirm each rejection leaves balances, journals and postings untouched.
+* [x] Confirm each rejection leaves balances, journals and postings untouched.
 
-* [ ] Confirm the generated OpenAPI document picked up the new endpoints automatically.
+* [x] Confirm the generated OpenAPI document picked up the new endpoints automatically.
 
   * `/v3/api-docs` contains:
 
@@ -2336,7 +2336,7 @@ GET  /v1/trades/{id}/attempts
 GET  /v1/commands/{key}
 ```
 
-* [ ] Do not add:
+* [x] Do not add:
 
   * `@Operation`, `@ApiResponse` or `@Schema` annotations
   * examples or descriptions
@@ -2353,9 +2353,9 @@ Why:
 
 Verification:
 
-* [ ] The HTTP settlement integration test passes.
-* [ ] The four Phase 3 endpoints appear in `/v3/api-docs` with no annotation or configuration work.
-* [ ] `./mvnw verify` passes.
+* [x] The HTTP settlement integration test passes.
+* [x] The four Phase 3 endpoints appear in `/v3/api-docs` with no annotation or configuration work.
+* [x] `./mvnw verify` passes.
 
 Engineering log:
 

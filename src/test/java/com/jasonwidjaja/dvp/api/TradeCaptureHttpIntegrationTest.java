@@ -73,6 +73,7 @@ class TradeCaptureHttpIntegrationTest extends AbstractPostgresIntegrationTest {
         assertThat(created.status()).isEqualTo(201);
         TradeResponse body = json.readValue(created.body(), TradeResponse.class);
         assertThat(body.status()).isEqualTo(TradeStatus.READY);
+        assertThat(body.journalId()).isNull();
         assertThat(body.externalTradeId()).isEqualTo("T-001");
         assertThat(body.buyerId()).isEqualTo(DemoSeed.ALICE_ID);
         assertThat(body.sellerId()).isEqualTo(DemoSeed.BOB_ID);

@@ -24,6 +24,16 @@ class ApiExceptionHandler {
         return error(404, "UNKNOWN_TRADE", "Trade does not exist");
     }
 
+    @ExceptionHandler(UnknownJournalException.class)
+    ResponseEntity<ErrorResponse> unknownJournal() {
+        return error(404, "UNKNOWN_JOURNAL", "Journal does not exist");
+    }
+
+    @ExceptionHandler(UnknownCommandException.class)
+    ResponseEntity<ErrorResponse> unknownCommand() {
+        return error(404, "UNKNOWN_COMMAND", "Command does not exist");
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ErrorResponse> malformedRequest() {
         return error(400, "MALFORMED_REQUEST", "Request body is malformed or has an invalid value");
@@ -33,7 +43,8 @@ class ApiExceptionHandler {
             MethodArgumentNotValidException.class,
             HandlerMethodValidationException.class,
             MethodArgumentTypeMismatchException.class,
-            ConversionFailedException.class
+            ConversionFailedException.class,
+            NonEmptyRequestBodyException.class
     })
     ResponseEntity<ErrorResponse> invalidRequest() {
         return error(400, "INVALID_REQUEST", "Request is structurally invalid");

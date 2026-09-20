@@ -15,7 +15,8 @@ public record TradeResponse(
         long quantity,
         long cashAmount,
         LocalDate settlementDate,
-        TradeStatus status
+        TradeStatus status,
+        UUID journalId
 ) {
 
     public static TradeResponse from(Trade trade) {
@@ -28,6 +29,7 @@ public record TradeResponse(
                 trade.terms().quantity(),
                 trade.terms().cashAmount(),
                 trade.terms().settlementDate(),
-                trade.status());
+                trade.status(),
+                trade.journalId());
     }
 }
