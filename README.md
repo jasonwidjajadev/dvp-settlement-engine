@@ -104,6 +104,13 @@ Bob EQ1   = 10
 
 Nothing settles in Phase 2. The trade remains `READY`.
 
+### OpenAPI / Swagger UI
+
+With the application running:
+
+- Swagger UI: http://localhost:8080/swagger-ui.html
+- OpenAPI JSON: http://localhost:8080/v3/api-docs
+
 ### Environment files
 
 - `.env.example`

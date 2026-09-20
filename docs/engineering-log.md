@@ -1559,6 +1559,28 @@ Phase 2 is complete.
 - Did not create `docs/detailed-plan/phase-3.md`.
 - Stopped here.
 
+## OpenAPI / Swagger bootstrap
+
+- Added `org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1`.
+  - Source: official springdoc documentation (https://springdoc.org/).
+  - `springdoc-openapi 3.x` is the Spring Boot 4 line. Current stable version documented there: `3.1.1`.
+  - Changelog `3.1.1` (2026-09-06) upgrades Spring Boot to 4.1.0. This project uses Spring Boot 4.1.1.
+  - Did not use Springfox.
+- No `@Operation`, `@ApiResponse`, `@Schema`, OpenAPI YAML, grouping, or extra springdoc properties.
+- Started `./mvnw spring-boot:run` against local PostgreSQL 18.6.
+  - `GET /v3/api-docs` → `200`, OpenAPI `3.1.0`.
+  - Paths: `POST /v1/trades`, `GET /v1/trades/{id}`, `GET /v1/accounts`.
+  - `GET /swagger-ui.html` → `302` to `/swagger-ui/index.html`.
+  - `GET /swagger-ui/index.html` → `200` HTML titled `Swagger UI`.
+- Added a short README section with those two URLs.
+- First `./mvnw verify` failed: `DvpApplicationTests` still required only `tradeController` and `accountController`.
+  - springdoc also registers `openApiResource` and `swaggerConfigResource`.
+  - Updated the existing assertion. No new OpenAPI test was added.
+- Ran `./mvnw verify` again after that fix.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 94. Failures: 0. Errors: 0. Skipped: 0.
+- No Phase 3 work. No settlement. No `docs/detailed-plan/phase-3.md` change.
+
 
 
 

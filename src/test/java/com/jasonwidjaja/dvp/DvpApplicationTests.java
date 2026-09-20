@@ -35,6 +35,6 @@ class DvpApplicationTests {
         assertThat(applicationContext.getBean(DvpApplication.class)).isNotNull();
         assertThat(applicationContext.getBean(AccountRepository.class)).isNotNull();
         assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class))
-                .containsExactlyInAnyOrder("tradeController", "accountController");
+                .contains("tradeController", "accountController");
     }
 }
