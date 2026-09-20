@@ -1743,11 +1743,11 @@ Write the financial effect of an approved settlement, then prove the whole write
 
 ## 3.6.1 Create exactly one settlement journal
 
-* [ ] Insert one journal for the trade.
+* [x] Insert one journal for the trade.
 
-* [ ] Let the unique `trade_id` constraint be the final authority.
+* [x] Let the unique `trade_id` constraint be the final authority.
 
-* [ ] Do not create a journal on any rejection path.
+* [x] Do not create a journal on any rejection path.
 
 Why:
 
@@ -1756,9 +1756,9 @@ Why:
 
 Verification:
 
-* [ ] A successful settlement produces exactly one journal for the trade.
-* [ ] `settled_at` is populated.
-* [ ] No rejection path creates a journal.
+* [x] A successful settlement produces exactly one journal for the trade.
+* [x] `settled_at` is populated.
+* [x] No rejection path creates a journal.
 
 Engineering log:
 
@@ -1772,7 +1772,7 @@ Ready for 3.6.2 when:
 
 ## 3.6.2 Create exactly four postings
 
-* [ ] Build the four postings from the trade terms and the resolved accounts.
+* [x] Build the four postings from the trade terms and the resolved accounts.
 
 ```text
 buyer  cash      DEBIT   cash_amount
@@ -1781,11 +1781,11 @@ buyer  security  CREDIT  quantity
 seller security  DEBIT   quantity
 ```
 
-* [ ] Insert them as one batch.
+* [x] Insert them as one batch.
 
-* [ ] Require exactly four affected rows.
+* [x] Require exactly four affected rows.
 
-* [ ] Do not insert a fifth posting, a netted posting or a zero-amount posting.
+* [x] Do not insert a fifth posting, a netted posting or a zero-amount posting.
 
 Why:
 
@@ -1795,10 +1795,10 @@ Why:
 
 Verification:
 
-* [ ] Exactly four postings exist after a successful settlement.
-* [ ] Each posting has the approved account, direction and amount.
-* [ ] Cash postings net to zero and security postings net to zero.
-* [ ] A deliberately malformed posting set fails at commit.
+* [x] Exactly four postings exist after a successful settlement.
+* [x] Each posting has the approved account, direction and amount.
+* [x] Cash postings net to zero and security postings net to zero.
+* [x] A deliberately malformed posting set fails at commit.
 
 Engineering log:
 
@@ -1812,7 +1812,7 @@ Ready for 3.6.3 when:
 
 ## 3.6.3 Update the four account balances
 
-* [ ] Apply the four deltas.
+* [x] Apply the four deltas.
 
 ```text
 buyer  cash      -cash_amount
@@ -1821,11 +1821,11 @@ buyer  security  +quantity
 seller security  -quantity
 ```
 
-* [ ] Apply them in ascending account-ID order, matching the lock order.
+* [x] Apply them in ascending account-ID order, matching the lock order.
 
-* [ ] Require exactly one affected row per update.
+* [x] Require exactly one affected row per update.
 
-* [ ] Let the non-negative `CHECK` constraints stand as the final guard.
+* [x] Let the non-negative `CHECK` constraints stand as the final guard.
 
 Why:
 
@@ -1835,11 +1835,11 @@ Why:
 
 Verification:
 
-* [ ] The Alice/Bob settlement produces Alice AUD 50000, Alice EQ1 10, Bob AUD 50000, Bob EQ1 0.
-* [ ] Opening balances are unchanged.
-* [ ] Total AUD across accounts is unchanged.
-* [ ] Total EQ1 across accounts is unchanged.
-* [ ] Each update affects exactly one row.
+* [x] The Alice/Bob settlement produces Alice AUD 50000, Alice EQ1 10, Bob AUD 50000, Bob EQ1 0.
+* [x] Opening balances are unchanged.
+* [x] Total AUD across accounts is unchanged.
+* [x] Total EQ1 across accounts is unchanged.
+* [x] Each update affects exactly one row.
 
 Engineering log:
 
@@ -1853,11 +1853,11 @@ Ready for 3.6.4 when:
 
 ## 3.6.4 Transition the trade from READY to SETTLED
 
-* [ ] Call `markSettled` with the journal id.
+* [x] Call `markSettled` with the journal id.
 
-* [ ] Require exactly one affected row.
+* [x] Require exactly one affected row.
 
-* [ ] Do not change any captured term.
+* [x] Do not change any captured term.
 
 Why:
 
@@ -1867,9 +1867,9 @@ Why:
 
 Verification:
 
-* [ ] The trade becomes `SETTLED` with its journal id.
-* [ ] The captured terms are unchanged.
-* [ ] A further update attempt on the settled trade fails.
+* [x] The trade becomes `SETTLED` with its journal id.
+* [x] The captured terms are unchanged.
+* [x] A further update attempt on the settled trade fails.
 
 Engineering log:
 
@@ -1883,12 +1883,12 @@ Ready for 3.6.5 when:
 
 ## 3.6.5 Record the durable settlement outcome and the attempt
 
-* [ ] Record a `SETTLED` settlement attempt.
+* [x] Record a `SETTLED` settlement attempt.
 
   * linked to the journal
   * with the evaluated business date
 
-* [ ] Serialize the settlement response body.
+* [x] Serialize the settlement response body.
 
 ```text
 tradeId
@@ -1898,11 +1898,11 @@ journalId
 settledAt
 ```
 
-* [ ] Finalize the command result with `201`, the body and `Location: /v1/journals/{journalId}`.
+* [x] Finalize the command result with `201`, the body and `Location: /v1/journals/{journalId}`.
 
-* [ ] Do everything above before the transaction ends.
+* [x] Do everything above before the transaction ends.
 
-* [ ] Return the outcome to the caller only after the transaction completes.
+* [x] Return the outcome to the caller only after the transaction completes.
 
 Why:
 
@@ -1912,10 +1912,10 @@ Why:
 
 Verification:
 
-* [ ] One completed command result exists with the approved status, body and location.
-* [ ] One `SETTLED` attempt exists, linked to the journal.
-* [ ] A replay returns the identical status, body and location.
-* [ ] A replay adds no attempt, journal, posting or balance change.
+* [x] One completed command result exists with the approved status, body and location.
+* [x] One `SETTLED` attempt exists, linked to the journal.
+* [x] A replay returns the identical status, body and location.
+* [x] A replay adds no attempt, journal, posting or balance change.
 
 Engineering log:
 
@@ -1943,21 +1943,21 @@ Alice AUD 50000    Alice EQ1 10
 Bob   AUD 50000    Bob   EQ1 0
 ```
 
-* [ ] Assert exactly one journal.
+* [x] Assert exactly one journal.
 
-* [ ] Assert exactly four postings with the correct accounts, directions and amounts.
+* [x] Assert exactly four postings with the correct accounts, directions and amounts.
 
-* [ ] Assert the four balances.
+* [x] Assert the four balances.
 
-* [ ] Assert the trade is `SETTLED` and points at the journal.
+* [x] Assert the trade is `SETTLED` and points at the journal.
 
-* [ ] Assert one completed command result.
+* [x] Assert one completed command result.
 
-* [ ] Assert one `SETTLED` attempt.
+* [x] Assert one `SETTLED` attempt.
 
-* [ ] Assert opening balances were not touched.
+* [x] Assert opening balances were not touched.
 
-* [ ] Replay the same command and assert nothing changed.
+* [x] Replay the same command and assert nothing changed.
 
 Why:
 
@@ -1966,8 +1966,8 @@ Why:
 
 Verification:
 
-* [ ] The settlement service integration test passes against Testcontainers PostgreSQL 18.6.
-* [ ] `./mvnw verify` passes.
+* [x] The settlement service integration test passes against Testcontainers PostgreSQL 18.6.
+* [x] `./mvnw verify` passes.
 
 Engineering log:
 
@@ -1981,15 +1981,15 @@ Ready for 3.6.7 when:
 
 ## 3.6.7 Prove rollback before commit
 
-* [ ] Inject a test-only technical failure after the balance updates and before the trade transition and finalize.
+* [x] Inject a test-only technical failure after the balance updates and before the trade transition and finalize.
 
   * Use a test-only `@Primary` repository decorator, as Phase 2 did.
   * Keep the decorator package-visible and non-final so Spring can proxy it. A `private final` nested class failed in Phase 2.
   * Do not add a failure hook to production code.
 
-* [ ] Let the transaction fail normally.
+* [x] Let the transaction fail normally.
 
-* [ ] Query PostgreSQL after the service call ends, from outside any test transaction.
+* [x] Query PostgreSQL after the service call ends, from outside any test transaction.
 
 Confirm:
 
@@ -2003,7 +2003,7 @@ all four balances unchanged
 opening balances unchanged
 ```
 
-* [ ] Remove the failure and retry the same command.
+* [x] Remove the failure and retry the same command.
 
 Confirm:
 
@@ -2019,9 +2019,9 @@ Why:
 
 Verification:
 
-* [ ] The rollback integration test passes.
-* [ ] Balance reconstruction still holds after the rolled-back attempt.
-* [ ] The retry succeeds exactly once.
+* [x] The rollback integration test passes.
+* [x] Balance reconstruction still holds after the rolled-back attempt.
+* [x] The retry succeeds exactly once.
 
 Engineering log:
 
@@ -2030,6 +2030,8 @@ Engineering log:
 Ready for 3.7 when:
 
 * settlement commits completely or leaves nothing behind
+
+Section 3.6 is complete. Do not begin Section 3.7 until requested.
 
 ---
 

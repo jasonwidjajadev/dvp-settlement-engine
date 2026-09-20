@@ -6,7 +6,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -14,12 +13,16 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.jasonwidjaja.dvp.api.ErrorResponse;
+import com.jasonwidjaja.dvp.api.SettlementResponse;
 import com.jasonwidjaja.dvp.api.UnknownTradeException;
 import com.jasonwidjaja.dvp.domain.Asset;
 import com.jasonwidjaja.dvp.domain.AssetType;
 import com.jasonwidjaja.dvp.domain.CommandResult;
+import com.jasonwidjaja.dvp.domain.Posting;
+import com.jasonwidjaja.dvp.domain.PostingDirection;
 import com.jasonwidjaja.dvp.domain.SettleCommand;
 import com.jasonwidjaja.dvp.domain.SettleRequestIdentity;
+import com.jasonwidjaja.dvp.domain.SettlementJournal;
 import com.jasonwidjaja.dvp.domain.SettlementOutcome;
 import com.jasonwidjaja.dvp.domain.Trade;
 import com.jasonwidjaja.dvp.domain.TradeStatus;
@@ -28,6 +31,7 @@ import com.jasonwidjaja.dvp.persistence.AssetRepository;
 import com.jasonwidjaja.dvp.persistence.CommandResultRepository;
 import com.jasonwidjaja.dvp.persistence.LockedAccount;
 import com.jasonwidjaja.dvp.persistence.SettlementAttemptRepository;
+import com.jasonwidjaja.dvp.persistence.SettlementJournalRepository;
 import com.jasonwidjaja.dvp.persistence.TradeRepository;
 
 import tools.jackson.core.JacksonException;
@@ -43,6 +47,7 @@ public class SettleTradeService {
     private final TradeRepository trades;
     private final AccountRepository accounts;
     private final AssetRepository assets;
+    private final SettlementJournalRepository journals;
     private final SettlementAttemptRepository attempts;
     private final BusinessCalendar calendar;
     private final JsonMapper jsonMapper;
@@ -53,6 +58,7 @@ public class SettleTradeService {
             TradeRepository trades,
             AccountRepository accounts,
             AssetRepository assets,
+            SettlementJournalRepository journals,
             SettlementAttemptRepository attempts,
             BusinessCalendar calendar
     ) {
@@ -61,6 +67,7 @@ public class SettleTradeService {
         this.trades = trades;
         this.accounts = accounts;
         this.assets = assets;
+        this.journals = journals;
         this.attempts = attempts;
         this.calendar = calendar;
         this.jsonMapper = JsonMapper.builder().build();
@@ -139,7 +146,49 @@ public class SettleTradeService {
                     "Seller securities are insufficient");
         }
 
-        throw new SuccessfulSettlementNotImplementedException();
+        return writeSettlement(command.idempotencyKey(), trade, affected, businessDate);
+    }
+
+    private CommandOutcome writeSettlement(
+            String commandKey,
+            Trade trade,
+            AffectedAccounts affected,
+            LocalDate businessDate
+    ) {
+        SettlementJournal journal = journals.insertJournal(trade.id());
+        journals.insertPostings(journal.id(), List.of(
+                posting(affected.buyerCashId(), PostingDirection.DEBIT, trade.terms().cashAmount()),
+                posting(affected.sellerCashId(), PostingDirection.CREDIT, trade.terms().cashAmount()),
+                posting(affected.buyerSecurityId(), PostingDirection.CREDIT, trade.terms().quantity()),
+                posting(affected.sellerSecurityId(), PostingDirection.DEBIT, trade.terms().quantity())));
+        applyDeltas(affected, trade);
+        trades.markSettled(trade.id(), journal.id());
+        attempts.insert(
+                trade.id(),
+                commandKey,
+                SettlementOutcome.SETTLED,
+                journal.id(),
+                businessDate);
+        String body = json(new SettlementResponse(
+                trade.id(),
+                TradeStatus.SETTLED,
+                SettlementOutcome.SETTLED,
+                journal.id(),
+                journal.settledAt()));
+        String location = "/v1/journals/" + journal.id();
+        commandResults.finalize(commandKey, 201, body, location);
+        return new CommandOutcome(201, body, location);
+    }
+
+    private void applyDeltas(AffectedAccounts affected, Trade trade) {
+        Map<UUID, Long> deltas = Map.of(
+                affected.buyerCashId(), -trade.terms().cashAmount(),
+                affected.sellerCashId(), trade.terms().cashAmount(),
+                affected.buyerSecurityId(), trade.terms().quantity(),
+                affected.sellerSecurityId(), -trade.terms().quantity());
+        for (UUID accountId : orderedAccountIds(affected)) {
+            accounts.applyDelta(accountId, deltas.get(accountId));
+        }
     }
 
     private CommandOutcome existingCommandOutcome(String commandKey, String requestIdentity) {
@@ -179,16 +228,25 @@ public class SettleTradeService {
     }
 
     private Map<UUID, LockedAccount> lockAccounts(AffectedAccounts affected) {
-        List<UUID> ordered = new ArrayList<>(affected.ids());
-        ordered.sort(UUID::compareTo);
         Map<UUID, LockedAccount> locked = new HashMap<>();
-        for (UUID accountId : ordered) {
+        for (UUID accountId : orderedAccountIds(affected)) {
             LockedAccount row = accounts.lockBalance(accountId)
                     .orElseThrow(() -> new SettlementIntegrityException(
                             "Required settlement account disappeared: " + accountId));
             locked.put(accountId, row);
         }
         return locked;
+    }
+
+    private static List<UUID> orderedAccountIds(AffectedAccounts affected) {
+        List<UUID> ordered = new ArrayList<>(affected.ids());
+        ordered.sort(UUID::compareTo);
+        return ordered;
+    }
+
+    private static Posting posting(UUID accountId, PostingDirection direction, long amount) {
+        long signedAmount = direction == PostingDirection.DEBIT ? -amount : amount;
+        return new Posting(UUID.randomUUID(), UUID.randomUUID(), accountId, direction, amount, signedAmount);
     }
 
     private CommandOutcome reject(

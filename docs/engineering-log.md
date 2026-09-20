@@ -2046,6 +2046,94 @@ Deviations and corrections:
 - Section 3.5 is complete.
 - Stopped here. Section 3.6 was not started.
 
+## 3.6 Settlement writes and durable outcome
+
+Successful settlement writes now happen in the same `TransactionTemplate` transaction as the 3.5 claim/lock/validate protocol. `SuccessfulSettlementNotImplementedException` was removed. No REST settlement endpoints were added.
+
+Write order after post-lock validation:
+
+```text
+insert journal
+→ insert four postings
+→ apply four relative deltas in lock order
+→ markSettled
+→ insert SETTLED attempt
+→ finalize 201 + Location /v1/journals/{journalId}
+```
+
+### 3.6.1 Create exactly one settlement journal
+
+- Injected `SettlementJournalRepository` into `SettleTradeService`.
+- `insertJournal(tradeId)` runs only on the approved success path.
+- Rejection paths still create no journal. Unique `trade_id` remains the database authority.
+
+### 3.6.2 Create exactly four postings
+
+- Built from trade terms and resolved accounts:
+  - buyer AUD `DEBIT` `cashAmount`
+  - seller AUD `CREDIT` `cashAmount`
+  - buyer security `CREDIT` `quantity`
+  - seller security `DEBIT` `quantity`
+- Inserted through `insertPostings`, which requires exactly four affected rows.
+- No fifth, netted or zero-amount posting.
+- Malformed journal shape is still rejected at commit by the V3 deferred trigger (proven in 3.2).
+
+### 3.6.3 Update the four account balances
+
+- Relative `applyDelta` only:
+  - buyer cash `-cashAmount`
+  - seller cash `+cashAmount`
+  - buyer security `+quantity`
+  - seller security `-quantity`
+- Applied with the same `orderedAccountIds` helper used for locking (ascending UUID).
+- Observed Alice/Bob T-001 (10 EQ1 for 50000):
+  - Alice AUD 50000, Alice EQ1 10, Bob AUD 50000, Bob EQ1 0
+  - opening balances unchanged
+  - total AUD 100000, total EQ1 10
+
+### 3.6.4 Transition READY to SETTLED
+
+- `markSettled(tradeId, journalId)` after the deltas.
+- Captured terms unchanged.
+- A second `markSettled` fails with `IncorrectResultSizeDataAccessException`.
+
+### 3.6.5 SETTLED attempt and durable command outcome
+
+- Added `SettlementResponse` (`tradeId`, `status`, `outcome`, `journalId`, `settledAt`).
+- Finalize `201`, that JSON body, `Location: /v1/journals/{journalId}`.
+- One `SETTLED` attempt linked to the journal, with the evaluated `businessDate`.
+- Outcome is returned only after `TransactionTemplate` completes.
+- Replay returns the identical status, body and location and writes nothing new.
+
+### 3.6.6 Complete successful settlement
+
+- `SettleTradeServiceIntegrationTest.aliceBobSettlementProducesTheApprovedFinancialState` asserts the full state set against Testcontainers PostgreSQL 18.6.
+- Today-dated, overdue and exactly sufficient trades now settle instead of hitting the 3.5 stub.
+
+### 3.6.7 Rollback before commit
+
+- Added `SettleTradeWriteRollbackIntegrationTest`.
+- Test-only package-visible non-final `@Primary` `TradeRepository` decorator throws on the first `markSettled`, after journal, postings and deltas, before the trade transition and finalize.
+- No production failure hook.
+- After the failed call, queried from outside the service transaction:
+  - no journal, posting, attempt or `command_result`
+  - trade still `READY` with `journalId` null
+  - current and opening balances unchanged
+  - `current_balance = opening_balance + sum(signed_amount)`
+- Retry of the same key then settles exactly once; a second replay adds no financial work.
+
+Deviations and corrections:
+
+- Postings still use four individual `jdbc.update` calls via `insertPostings` rather than JDBC `batchUpdate`, as in 3.4, so affected-row counts are real.
+- A deliberately malformed posting set is not written by the service. The V3 deferred shape trigger already covers that failure at commit.
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 182. Failures: 0. Errors: 0. Skipped: 0.
+- Section 3.6 is complete.
+- Stopped here. Section 3.7 was not started.
+
+
 
 
 

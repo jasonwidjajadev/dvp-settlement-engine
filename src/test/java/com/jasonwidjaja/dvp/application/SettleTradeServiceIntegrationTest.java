@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -16,12 +17,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.JdbcTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.jasonwidjaja.dvp.api.ErrorResponse;
+import com.jasonwidjaja.dvp.api.SettlementResponse;
 import com.jasonwidjaja.dvp.api.UnknownTradeException;
 import com.jasonwidjaja.dvp.domain.Account;
 import com.jasonwidjaja.dvp.domain.CommandResult;
@@ -47,6 +50,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
+import static org.assertj.core.api.Assertions.within;
 
 class SettleTradeServiceIntegrationTest extends AbstractPostgresIntegrationTest {
 
@@ -204,29 +209,25 @@ class SettleTradeServiceIntegrationTest extends AbstractPostgresIntegrationTest 
     }
 
     @Test
-    void tradeDatedTodayIsAcceptedAsDue() {
+    void tradeDatedTodaySettles() {
         Trade trade = insertTrade(aliceBuysEq1(10, 50000, BUSINESS_DATE));
-        List<Account> before = accounts.findAll();
 
-        assertThatThrownBy(() -> settle.settle(new SettleCommand("settle-T-001", trade.id())))
-                .isInstanceOf(SuccessfulSettlementNotImplementedException.class);
+        CommandOutcome outcome = settle.settle(new SettleCommand("settle-T-001", trade.id()));
 
-        assertThat(commandResults.findByCommandKey("settle-T-001")).isEmpty();
-        assertThat(attempts.findByTradeId(trade.id())).isEmpty();
-        assertUnmoved(trade.id(), before);
+        assertThat(outcome.httpStatus()).isEqualTo(201);
+        assertThat(trades.findById(trade.id()).orElseThrow().status()).isEqualTo(TradeStatus.SETTLED);
+        assertThat(attempts.findByTradeId(trade.id()).getFirst().outcome()).isEqualTo(SettlementOutcome.SETTLED);
     }
 
     @Test
-    void overdueTradeIsAcceptedAsDue() {
+    void overdueTradeSettles() {
         Trade trade = insertTrade(aliceBuysEq1(10, 50000, LocalDate.of(2026, 9, 19)));
-        List<Account> before = accounts.findAll();
 
-        assertThatThrownBy(() -> settle.settle(new SettleCommand("settle-T-001", trade.id())))
-                .isInstanceOf(SuccessfulSettlementNotImplementedException.class);
+        CommandOutcome outcome = settle.settle(new SettleCommand("settle-T-001", trade.id()));
 
-        assertThat(commandResults.findByCommandKey("settle-T-001")).isEmpty();
-        assertThat(attempts.findByTradeId(trade.id())).isEmpty();
-        assertUnmoved(trade.id(), before);
+        assertThat(outcome.httpStatus()).isEqualTo(201);
+        assertThat(trades.findById(trade.id()).orElseThrow().status()).isEqualTo(TradeStatus.SETTLED);
+        assertThat(attempts.findByTradeId(trade.id()).getFirst().outcome()).isEqualTo(SettlementOutcome.SETTLED);
     }
 
     @Test
@@ -298,16 +299,96 @@ class SettleTradeServiceIntegrationTest extends AbstractPostgresIntegrationTest 
     }
 
     @Test
-    void exactlySufficientBalancesPassValidation() {
+    void exactlySufficientBalancesSettle() {
         Trade trade = insertTrade(aliceBuysEq1(10, 100000, BUSINESS_DATE));
-        List<Account> before = accounts.findAll();
 
-        assertThatThrownBy(() -> settle.settle(new SettleCommand("settle-T-001", trade.id())))
-                .isInstanceOf(SuccessfulSettlementNotImplementedException.class);
+        CommandOutcome outcome = settle.settle(new SettleCommand("settle-T-001", trade.id()));
 
-        assertThat(commandResults.findByCommandKey("settle-T-001")).isEmpty();
-        assertThat(attempts.findByTradeId(trade.id())).isEmpty();
-        assertUnmoved(trade.id(), before);
+        assertThat(outcome.httpStatus()).isEqualTo(201);
+        assertThat(balance(DemoSeed.ALICE_AUD_ID).currentBalance()).isEqualTo(0);
+        assertThat(balance(DemoSeed.ALICE_EQ1_ID).currentBalance()).isEqualTo(10);
+        assertThat(balance(DemoSeed.BOB_AUD_ID).currentBalance()).isEqualTo(100000);
+        assertThat(balance(DemoSeed.BOB_EQ1_ID).currentBalance()).isEqualTo(0);
+        assertThat(trades.findById(trade.id()).orElseThrow().status()).isEqualTo(TradeStatus.SETTLED);
+    }
+
+    @Test
+    void aliceBobSettlementProducesTheApprovedFinancialState() {
+        Trade trade = insertTrade(aliceBuysEq1(10, 50000, BUSINESS_DATE));
+        TradeTerms capturedTerms = trade.terms();
+
+        CommandOutcome first = settle.settle(new SettleCommand("settle-T-001", trade.id()));
+        SettlementResponse body = json.readValue(first.responseBody(), SettlementResponse.class);
+        SettlementJournal journal = journals.findJournalByTradeId(trade.id()).orElseThrow();
+        List<Posting> postings = journals.findPostingsByJournalId(journal.id());
+        Trade settled = trades.findById(trade.id()).orElseThrow();
+        CommandResult stored = commandResults.findByCommandKey("settle-T-001").orElseThrow();
+        SettlementAttempt attempt = attempts.findByTradeId(trade.id()).getFirst();
+
+        assertThat(first.httpStatus()).isEqualTo(201);
+        assertThat(first.location()).isEqualTo("/v1/journals/" + journal.id());
+        assertThat(body.tradeId()).isEqualTo(trade.id());
+        assertThat(body.status()).isEqualTo(TradeStatus.SETTLED);
+        assertThat(body.outcome()).isEqualTo(SettlementOutcome.SETTLED);
+        assertThat(body.journalId()).isEqualTo(journal.id());
+        assertThat(body.settledAt()).isCloseTo(journal.settledAt(), within(1, ChronoUnit.SECONDS));
+        assertThat(journal.settledAt()).isNotNull();
+
+        assertThat(postings).hasSize(4);
+        assertThat(postings)
+                .extracting(Posting::accountId, Posting::direction, Posting::amount, Posting::signedAmount)
+                .containsExactly(
+                        tuple(DemoSeed.BOB_AUD_ID, PostingDirection.CREDIT, 50000L, 50000L),
+                        tuple(DemoSeed.ALICE_AUD_ID, PostingDirection.DEBIT, 50000L, -50000L),
+                        tuple(DemoSeed.ALICE_EQ1_ID, PostingDirection.CREDIT, 10L, 10L),
+                        tuple(DemoSeed.BOB_EQ1_ID, PostingDirection.DEBIT, 10L, -10L));
+        assertThat(postings.stream().filter(posting -> posting.accountId().equals(DemoSeed.ALICE_AUD_ID)
+                        || posting.accountId().equals(DemoSeed.BOB_AUD_ID))
+                .mapToLong(Posting::signedAmount).sum()).isZero();
+        assertThat(postings.stream().filter(posting -> posting.accountId().equals(DemoSeed.ALICE_EQ1_ID)
+                        || posting.accountId().equals(DemoSeed.BOB_EQ1_ID))
+                .mapToLong(Posting::signedAmount).sum()).isZero();
+
+        Account aliceAud = balance(DemoSeed.ALICE_AUD_ID);
+        Account aliceEq1 = balance(DemoSeed.ALICE_EQ1_ID);
+        Account bobAud = balance(DemoSeed.BOB_AUD_ID);
+        Account bobEq1 = balance(DemoSeed.BOB_EQ1_ID);
+        assertThat(aliceAud.currentBalance()).isEqualTo(50000);
+        assertThat(aliceEq1.currentBalance()).isEqualTo(10);
+        assertThat(bobAud.currentBalance()).isEqualTo(50000);
+        assertThat(bobEq1.currentBalance()).isEqualTo(0);
+        assertThat(aliceAud.openingBalance()).isEqualTo(100000);
+        assertThat(aliceEq1.openingBalance()).isEqualTo(0);
+        assertThat(bobAud.openingBalance()).isEqualTo(0);
+        assertThat(bobEq1.openingBalance()).isEqualTo(10);
+        assertThat(aliceAud.currentBalance() + bobAud.currentBalance()).isEqualTo(100000);
+        assertThat(aliceEq1.currentBalance() + bobEq1.currentBalance()).isEqualTo(10);
+
+        assertThat(settled.status()).isEqualTo(TradeStatus.SETTLED);
+        assertThat(settled.journalId()).isEqualTo(journal.id());
+        assertThat(settled.terms()).isEqualTo(capturedTerms);
+        assertThatThrownBy(() -> trades.markSettled(trade.id(), journal.id()))
+                .isInstanceOf(IncorrectResultSizeDataAccessException.class);
+
+        assertThat(stored.completed()).isTrue();
+        assertThat(stored.operation()).isEqualTo(SettleRequestIdentity.OPERATION);
+        assertThat(stored.httpStatus()).isEqualTo(201);
+        assertThat(stored.responseBody()).isEqualTo(first.responseBody());
+        assertThat(stored.location()).isEqualTo(first.location());
+        assertThat(attempt.outcome()).isEqualTo(SettlementOutcome.SETTLED);
+        assertThat(attempt.journalId()).isEqualTo(journal.id());
+        assertThat(attempt.businessDate()).isEqualTo(BUSINESS_DATE);
+        assertThat(attempts.findByTradeId(trade.id())).hasSize(1);
+
+        CommandOutcome replay = settle.settle(new SettleCommand("settle-T-001", trade.id()));
+        assertThat(replay).isEqualTo(first);
+        assertThat(attempts.findByTradeId(trade.id())).hasSize(1);
+        assertThat(journals.findJournalByTradeId(trade.id()).orElseThrow().id()).isEqualTo(journal.id());
+        assertThat(journals.findPostingsByJournalId(journal.id())).hasSize(4);
+        assertThat(balance(DemoSeed.ALICE_AUD_ID).currentBalance()).isEqualTo(50000);
+        assertThat(balance(DemoSeed.BOB_EQ1_ID).currentBalance()).isEqualTo(0);
+        assertThat(commandResults.findByCommandKey("settle-T-001").orElseThrow().responseBody())
+                .isEqualTo(first.responseBody());
     }
 
     private void assertRejected(CommandOutcome outcome, int status, String code) {
@@ -322,6 +403,10 @@ class SettleTradeServiceIntegrationTest extends AbstractPostgresIntegrationTest 
         assertThat(journals.findJournalByTradeId(tradeId)).isEmpty();
         assertThat(journals.findPostingsByJournalId(UUID.randomUUID())).isEmpty();
         assertThat(accounts.findAll()).containsExactlyElementsOf(before);
+    }
+
+    private Account balance(UUID accountId) {
+        return accounts.findById(accountId).orElseThrow();
     }
 
     private Trade insertTrade(TradeTerms terms) {
