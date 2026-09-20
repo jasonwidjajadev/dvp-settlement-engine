@@ -2243,6 +2243,76 @@ Deviations and corrections:
 - Section 3.7 is complete.
 - Stopped here. Section 3.8 was not started.
 
+## 3.8 Financial invariant verification
+
+Independent PostgreSQL checks now prove reconstruction, conservation, journal shape and immutable history from committed rows. No product endpoint or settlement behaviour was added.
+
+### 3.8.1 Reconstruct balances from opening balance plus committed postings
+
+- Added test-support `FinancialInvariantChecks` with the approved reconstruction query:
+
+```sql
+SELECT account.id
+FROM account
+LEFT JOIN posting ON posting.account_id = account.id
+GROUP BY account.id, account.opening_balance, account.current_balance
+HAVING account.current_balance
+     <> account.opening_balance + COALESCE(SUM(posting.signed_amount), 0)
+```
+
+- The check passes only when that query returns no rows.
+- It is not a product API and is not used by `SettleTradeService`.
+- `BalanceReconstructionIntegrationTest` ran it after:
+  - seeded state before settlement
+  - Alice/Bob successful settlement
+  - replay of the same settle key
+  - `NOT_DUE`
+  - `INSUFFICIENT_CASH`
+  - `INSUFFICIENT_SECURITIES`
+- Rolled-back technical failure uses the same SQL in `SettleTradeWriteRollbackIntegrationTest` after the forced failure, after the successful retry, and after the second replay.
+- Disposable corruption: `UPDATE account SET current_balance = 50000` on Alice AUD with no postings. The check returned exactly that account id.
+
+### 3.8.2 Verify conservation and journal shape
+
+- `FinancialInvariantIntegrationTest` asserts from committed SQL, not from `SettlementResponse`.
+- After Alice/Bob settlement:
+  - total AUD remains 100000
+  - total EQ1 remains 10
+  - `SUM(current_balance) = SUM(opening_balance)` per asset
+  - no `current_balance < 0`
+  - at most one journal per trade
+  - every journal has exactly four postings
+  - two distinct assets
+  - per-asset signed net is zero
+  - postings are buyer AUD `DEBIT cashAmount`, seller AUD `CREDIT cashAmount`, buyer security `CREDIT quantity`, seller security `DEBIT quantity` against `trade.security_id`
+- After `NOT_DUE`, `INSUFFICIENT_CASH` and `INSUFFICIENT_SECURITIES`: no journals, no postings, totals and reconstruction unchanged.
+
+### 3.8.3 Verify immutable settlement history
+
+- `SettlementHistoryImmutabilityIntegrationTest` settles Alice/Bob through the service, then mutates with test JDBC.
+- PostgreSQL rejected:
+  - `UPDATE posting` amount → `settlement_history_immutable`
+  - `UPDATE posting` direction → `settlement_history_immutable`
+  - `DELETE posting` → `settlement_history_immutable`
+  - `UPDATE` / `DELETE settlement_journal` → `settlement_history_immutable`
+  - `UPDATE` / `DELETE settlement_attempt` → `settlement_history_immutable`
+  - revert `SETTLED` → `READY` → `trade_settled_immutable`
+  - change captured `quantity` → `trade_terms_immutable`
+  - overwrite completed `command_result` → `command_result_completed_immutable`
+- Reflection review: journal/attempt repositories expose insert and find only; trade has `markSettled` but no term or revert update; command results expose `claim` / `finalize` / `findByCommandKey`; controllers have no `PUT` / `PATCH` / `DELETE`.
+- No new mutation methods were added.
+
+Deviations and corrections:
+
+- Reconstruction after the rolled-back write failure is asserted in the existing 3.6.7 test rather than duplicating the test-only `TradeRepository` decorator in a second Spring context.
+- 3.2 schema tests already covered several of these database rejections. 3.8.3 repeats them against a journal produced by `SettleTradeService`, and adds the controller/repository API review.
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 200. Failures: 0. Errors: 0. Skipped: 0.
+- Section 3.8 is complete.
+- Stopped here. Section 3.9 was not started.
+
 
 
 

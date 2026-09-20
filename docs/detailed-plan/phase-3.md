@@ -2386,7 +2386,7 @@ What is balance reconstruction?
 current balance = opening balance + all committed postings
 ```
 
-* [ ] Add a test-support reconstruction check.
+* [x] Add a test-support reconstruction check.
 
 Conceptually:
 
@@ -2401,12 +2401,12 @@ HAVING account.current_balance
 
 * The check passes only when the query returns no rows.
 
-* [ ] Keep the check in test support, not in the product API.
+* [x] Keep the check in test support, not in the product API.
 
   * No endpoint for arbitrary balance work is in scope.
   * Reconciliation-facing balance evidence belongs to Phase 5.
 
-* [ ] Run the check after:
+* [x] Run the check after:
 
   * a successful settlement
   * each rejection path
@@ -2420,10 +2420,10 @@ Why:
 
 Verification:
 
-* [ ] Reconstruction holds for the seeded state before any settlement.
-* [ ] Reconstruction holds after the Alice/Bob settlement.
-* [ ] Reconstruction holds after every rejection and after the rollback test.
-* [ ] A deliberately corrupted balance, applied directly in a disposable test, is detected.
+* [x] Reconstruction holds for the seeded state before any settlement.
+* [x] Reconstruction holds after the Alice/Bob settlement.
+* [x] Reconstruction holds after every rejection and after the rollback test.
+* [x] A deliberately corrupted balance, applied directly in a disposable test, is detected.
 
 Engineering log:
 
@@ -2437,15 +2437,15 @@ Ready for 3.8.2 when:
 
 ## 3.8.2 Verify conservation and journal shape
 
-* [ ] Assert cash conservation.
+* [x] Assert cash conservation.
 
   * total AUD across all accounts is unchanged by settlement (I4)
 
-* [ ] Assert security conservation.
+* [x] Assert security conservation.
 
   * total EQ1 across all accounts is unchanged by settlement (I5)
 
-* [ ] Assert per-journal shape.
+* [x] Assert per-journal shape.
 
   * exactly four postings
   * two distinct assets
@@ -2453,9 +2453,9 @@ Ready for 3.8.2 when:
   * amounts equal the trade's cash amount and quantity
   * accounts belong to the trade's buyer and seller (I6)
 
-* [ ] Assert no negative balances exist (I3).
+* [x] Assert no negative balances exist (I3).
 
-* [ ] Assert at most one journal per trade (I2).
+* [x] Assert at most one journal per trade (I2).
 
 Why:
 
@@ -2464,10 +2464,10 @@ Why:
 
 Verification:
 
-* [ ] Conservation holds after settlement.
-* [ ] Journal shape holds for every committed journal.
-* [ ] No account is negative.
-* [ ] No trade has two journals.
+* [x] Conservation holds after settlement.
+* [x] Journal shape holds for every committed journal.
+* [x] No account is negative.
+* [x] No trade has two journals.
 
 Engineering log:
 
@@ -2481,7 +2481,7 @@ Ready for 3.8.3 when:
 
 ## 3.8.3 Verify immutable settlement history
 
-* [ ] Attempt, in disposable tests, to:
+* [x] Attempt, in disposable tests, to:
 
   * update a posting amount or direction
   * delete a posting
@@ -2491,9 +2491,9 @@ Ready for 3.8.3 when:
   * change a captured trade term
   * overwrite a completed command result
 
-* [ ] Confirm each attempt fails.
+* [x] Confirm each attempt fails.
 
-* [ ] Confirm the product exposes no endpoint or repository method that performs any of them.
+* [x] Confirm the product exposes no endpoint or repository method that performs any of them.
 
 Why:
 
@@ -2502,8 +2502,8 @@ Why:
 
 Verification:
 
-* [ ] Every mutation attempt fails.
-* [ ] A repository and controller review confirms no mutation path exists.
+* [x] Every mutation attempt fails.
+* [x] A repository and controller review confirms no mutation path exists.
 
 Engineering log:
 

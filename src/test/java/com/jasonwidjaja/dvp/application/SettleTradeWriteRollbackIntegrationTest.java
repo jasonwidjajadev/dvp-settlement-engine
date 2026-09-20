@@ -32,6 +32,7 @@ import com.jasonwidjaja.dvp.persistence.SettlementJournalRepository;
 import com.jasonwidjaja.dvp.persistence.TradeRepository;
 import com.jasonwidjaja.dvp.support.AbstractPostgresIntegrationTest;
 import com.jasonwidjaja.dvp.support.DemoSeed;
+import com.jasonwidjaja.dvp.support.FinancialInvariantChecks;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -92,7 +93,8 @@ class SettleTradeWriteRollbackIntegrationTest extends AbstractPostgresIntegratio
         assertThat(rolledBack.terms()).isEqualTo(trade.terms());
         assertThat(accounts.findAll()).containsExactlyElementsOf(before);
         assertOpeningBalancesUnchanged();
-        assertBalancesMatchOpeningPlusPostings();
+        FinancialInvariantChecks.assertReconstructionHolds(jdbc);
+        FinancialInvariantChecks.assertConservationAndJournalShapeHold(jdbc);
 
         CommandOutcome retry = settle.settle(new SettleCommand("settle-T-001", trade.id()));
 
@@ -109,13 +111,16 @@ class SettleTradeWriteRollbackIntegrationTest extends AbstractPostgresIntegratio
         assertThat(accounts.findById(DemoSeed.BOB_AUD_ID).orElseThrow().currentBalance()).isEqualTo(50000);
         assertThat(accounts.findById(DemoSeed.BOB_EQ1_ID).orElseThrow().currentBalance()).isEqualTo(0);
         assertOpeningBalancesUnchanged();
-        assertBalancesMatchOpeningPlusPostings();
+        FinancialInvariantChecks.assertReconstructionHolds(jdbc);
+        FinancialInvariantChecks.assertConservationAndJournalShapeHold(jdbc);
 
         CommandOutcome secondRetry = settle.settle(new SettleCommand("settle-T-001", trade.id()));
         assertThat(secondRetry).isEqualTo(retry);
         assertThat(attempts.findByTradeId(trade.id())).hasSize(1);
         assertThat(journals.findJournalByTradeId(trade.id())).isPresent();
         assertThat(journals.findPostingsByJournalId(body.journalId())).hasSize(4);
+        FinancialInvariantChecks.assertReconstructionHolds(jdbc);
+        FinancialInvariantChecks.assertConservationAndJournalShapeHold(jdbc);
     }
 
     private Integer postingCount() {
@@ -127,20 +132,6 @@ class SettleTradeWriteRollbackIntegrationTest extends AbstractPostgresIntegratio
         assertThat(accounts.findById(DemoSeed.ALICE_EQ1_ID).orElseThrow().openingBalance()).isEqualTo(0);
         assertThat(accounts.findById(DemoSeed.BOB_AUD_ID).orElseThrow().openingBalance()).isEqualTo(0);
         assertThat(accounts.findById(DemoSeed.BOB_EQ1_ID).orElseThrow().openingBalance()).isEqualTo(10);
-    }
-
-    private void assertBalancesMatchOpeningPlusPostings() {
-        for (Account account : accounts.findAll()) {
-            Long posted = jdbc.queryForObject(
-                    """
-                    SELECT coalesce(sum(signed_amount), 0)
-                    FROM posting
-                    WHERE account_id = :accountId
-                    """,
-                    Map.of("accountId", account.id()),
-                    Long.class);
-            assertThat(account.currentBalance()).isEqualTo(account.openingBalance() + posted);
-        }
     }
 
     private static TradeTerms aliceBuysEq1() {
