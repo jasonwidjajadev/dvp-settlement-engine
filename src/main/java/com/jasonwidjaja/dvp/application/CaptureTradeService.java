@@ -58,7 +58,10 @@ public class CaptureTradeService {
 
     private CommandOutcome captureInTransaction(CaptureCommand command) {
         String requestIdentity = CaptureRequestIdentity.of(command.terms());
-        boolean claimed = commandResults.claim(command.idempotencyKey(), requestIdentity);
+        boolean claimed = commandResults.claim(
+                command.idempotencyKey(),
+                CaptureRequestIdentity.OPERATION,
+                requestIdentity);
         if (!claimed) {
             return existingCommandOutcome(command.idempotencyKey(), requestIdentity);
         }

@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -43,6 +44,20 @@ public class TradeRepository {
             """ + TRADE_COLUMNS + """
             FROM trade
             WHERE external_trade_id = :externalTradeId
+            """;
+
+    private static final String LOCK_BY_ID_SQL = """
+            SELECT
+            """ + TRADE_COLUMNS + """
+            FROM trade
+            WHERE id = :tradeId
+            FOR UPDATE
+            """;
+
+    private static final String MARK_SETTLED_SQL = """
+            UPDATE trade
+            SET status = 'SETTLED', journal_id = :journalId
+            WHERE id = :tradeId AND status = 'READY'
             """;
 
     private static final String INSERT_IF_ABSENT_SQL = """
@@ -83,6 +98,22 @@ public class TradeRepository {
 
     public Optional<Trade> findByExternalTradeId(String externalTradeId) {
         return queryOne(FIND_BY_EXTERNAL_TRADE_ID_SQL, Map.of("externalTradeId", externalTradeId));
+    }
+
+    public Optional<Trade> lockById(UUID tradeId) {
+        return queryOne(LOCK_BY_ID_SQL, Map.of("tradeId", tradeId));
+    }
+
+    public void markSettled(UUID tradeId, UUID journalId) {
+        int updated = jdbc.update(
+                MARK_SETTLED_SQL,
+                Map.of("tradeId", tradeId, "journalId", journalId));
+        if (updated != 1) {
+            throw new IncorrectResultSizeDataAccessException(
+                    "Expected to settle exactly one READY trade '" + tradeId + "'",
+                    1,
+                    updated);
+        }
     }
 
     public Optional<Trade> insertIfAbsent(TradeTerms terms) {

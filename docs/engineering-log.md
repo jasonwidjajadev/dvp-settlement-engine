@@ -1890,6 +1890,93 @@ Deviations and corrections:
 - Section 3.3 is complete.
 - Stopped here. Section 3.4 was not started.
 
+## 3.4 Settlement JDBC persistence
+
+Repositories provide explicit SQL. They do not own the settlement transaction. No `SettleTradeService` or settlement controllers were added. No Java-level locking. No concurrency race tests.
+
+### 3.4.1 Trade locking and the settled transition
+
+- Extended `TradeRepository`.
+  - `lockById(UUID)`: `SELECT ... FROM trade WHERE id = :tradeId FOR UPDATE`.
+    - Single-table lock. Serializes settlement of the same trade before any account is touched.
+    - Unknown id returns empty.
+  - `markSettled(UUID tradeId, UUID journalId)`: `UPDATE trade SET status = 'SETTLED', journal_id = :journalId WHERE id = :tradeId AND status = 'READY'`.
+    - Conditional write: the `READY` guard prevents a second settle even if a check above it is removed.
+    - Requires exactly one updated row. Otherwise `IncorrectResultSizeDataAccessException`.
+  - No method changes captured terms.
+
+- Tests: `TradeRepositoryIntegrationTest` lock read / unknown id; `TradeSettlementPersistenceIntegrationTest` `READY → SETTLED` and already-settled failure.
+
+### 3.4.2 Account resolution, row locking, and relative balance updates
+
+- Extended `AccountRepository`.
+  - `findIdByParticipantAndAsset`: `SELECT id FROM account WHERE participant_id AND asset_id`. Resolves one of the four accounts without locking.
+  - `lockBalance(UUID)`: `SELECT id, asset_id, current_balance FROM account WHERE id = :accountId FOR UPDATE`.
+    - Single-table query. Does not reuse the joined `findById` read, which would also lock `participant` and `asset`.
+  - `applyDelta(UUID, long)`: `UPDATE account SET current_balance = current_balance + :delta WHERE id = :accountId`.
+    - Relative only. Exact one-row requirement.
+  - No absolute balance setter.
+- Added `LockedAccount` (`id`, `assetId`, `currentBalance`) for the locked row.
+- Extended `AssetRepository.findByCode(String)` so AUD can be resolved without knowing its id.
+
+- Tests: `AccountSettlementPersistenceIntegrationTest` — Alice/Bob AUD and EQ1 resolution, unknown pair empty, AUD by code, locked balance, increase/decrease deltas, unknown-account exact-row failure, negative delta rejected by `account_current_balance_non_negative`, no setter method on the repository.
+
+### 3.4.3 SettlementJournalRepository
+
+- Added `src/main/java/com/jasonwidjaja/dvp/persistence/SettlementJournalRepository.java`.
+  - `insertJournal(tradeId)` generates the journal UUID in Java and returns the inserted row.
+  - `insertPostings(journalId, postings)` requires list size 4, inserts each posting, and requires exactly four affected rows.
+  - `findJournalById`, `findJournalByTradeId`.
+  - `findPostingsByJournalId` orders by `asset.code`, `posting.direction`, `posting.account_id`.
+  - No update or delete methods.
+
+- JDBC `Instant` cannot be bound by the PostgreSQL driver (`Can't infer the SQL type`). Inserts bind `OffsetDateTime` in UTC; reads map `OffsetDateTime` back to `Instant`.
+
+- Tests wrap `insertJournal` + four postings in `TransactionTemplate` because the deferred `settlement_journal_shape` trigger fires at commit. The repository still does not begin or commit that transaction.
+
+### 3.4.4 SettlementAttemptRepository
+
+- Added `src/main/java/com/jasonwidjaja/dvp/persistence/SettlementAttemptRepository.java`.
+  - `insert(tradeId, commandKey, outcome, journalId, businessDate)` generates the attempt UUID in Java.
+  - `journalId` may be null for rejections; `HashMap` is used because `Map.of` rejects null.
+  - `findByTradeId` orders by `decided_at`, then `id`.
+  - No update or delete methods.
+  - `MISSING_ACCOUNT` is not an outcome and is not written.
+
+### 3.4.5 CommandResultRepository SETTLE_TRADE
+
+- Changed `claim` from `claim(commandKey, requestIdentity)` to `claim(commandKey, operation, requestIdentity)`.
+  - Capture call site: `CaptureTradeService` now passes `CaptureRequestIdentity.OPERATION`.
+  - Settlement tests pass `SettleRequestIdentity.OPERATION`.
+- `findByCommandKey` and exact `finalize` are unchanged.
+- Identity comparison remains string equality on stored `request_identity`.
+- Call sites updated: `CaptureTradeService`, `CommandResultRepositoryIntegrationTest`.
+
+### 3.4.6 Persistence-layer verification
+
+- Added PostgreSQL integration tests on the existing Testcontainers PostgreSQL 18.6 setup and shared `TRUNCATE` cleanup:
+  - `TradeSettlementPersistenceIntegrationTest`
+  - `AccountSettlementPersistenceIntegrationTest`
+  - `SettlementJournalRepositoryIntegrationTest`
+  - `SettlementAttemptRepositoryIntegrationTest`
+  - Command-result settlement claim tests in `CommandResultRepositoryIntegrationTest`
+  - Trade lock tests in `TradeRepositoryIntegrationTest`
+
+Deviations and corrections:
+
+- `insertPostings` uses four individual `jdbc.update` calls rather than `batchUpdate`. PostgreSQL JDBC batch results can return `SUCCESS_NO_INFO` (`-2`), which cannot prove exactly four affected rows.
+- First `./mvnw verify` failed: 1 failure and 10 errors. Cause: binding `java.time.Instant` to `TIMESTAMPTZ`. Fixed by binding `OffsetDateTime` at UTC. Re-ran verify.
+- Journal + four postings are committed together in tests because of the deferred shape trigger. That is test/transaction-boundary usage, not repository-owned settlement.
+- No competing-transaction lock tests. Those belong to Phase 4.
+- No `SettleTradeService`, settlement controllers, `Clock`, or `BusinessCalendar`.
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 159. Failures: 0. Errors: 0. Skipped: 0.
+- Section 3.4 is complete.
+- Stopped here. Section 3.5 was not started.
+
+
 
 
 

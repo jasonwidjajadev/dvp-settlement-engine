@@ -22,6 +22,12 @@ public class AssetRepository {
             WHERE id = :assetId
             """;
 
+    private static final String FIND_BY_CODE_SQL = """
+            SELECT id, code, type
+            FROM asset
+            WHERE code = :code
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
 
     public AssetRepository(NamedParameterJdbcTemplate jdbc) {
@@ -32,6 +38,14 @@ public class AssetRepository {
         List<Asset> assets = jdbc.query(
                 FIND_BY_ID_SQL,
                 Map.of("assetId", assetId),
+                AssetRepository::mapAsset);
+        return assets.stream().findFirst();
+    }
+
+    public Optional<Asset> findByCode(String code) {
+        List<Asset> assets = jdbc.query(
+                FIND_BY_CODE_SQL,
+                Map.of("code", code),
                 AssetRepository::mapAsset);
         return assets.stream().findFirst();
     }

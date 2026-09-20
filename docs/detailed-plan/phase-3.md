@@ -1121,13 +1121,13 @@ What is `SELECT ... FOR UPDATE`?
 * A second transaction trying to lock the same row waits.
 * This is the PostgreSQL mechanism ADR-007 relies on. Java locks are deliberately not used.
 
-* [ ] Add `lockById(UUID)` to `TradeRepository`.
+* [x] Add `lockById(UUID)` to `TradeRepository`.
 
 ```sql
 SELECT ... FROM trade WHERE id = :tradeId FOR UPDATE
 ```
 
-* [ ] Add `markSettled(UUID tradeId, UUID journalId)`.
+* [x] Add `markSettled(UUID tradeId, UUID journalId)`.
 
 ```sql
 UPDATE trade
@@ -1135,9 +1135,9 @@ SET status = 'SETTLED', journal_id = :journalId
 WHERE id = :tradeId AND status = 'READY'
 ```
 
-* [ ] Require exactly one updated row, and fail loudly otherwise.
+* [x] Require exactly one updated row, and fail loudly otherwise.
 
-* [ ] Do not add any method that changes captured terms.
+* [x] Do not add any method that changes captured terms.
 
 Why:
 
@@ -1148,10 +1148,10 @@ Why:
 
 Verification:
 
-* [ ] A locked read returns the current trade.
-* [ ] An unknown id returns empty.
-* [ ] `markSettled` sets the status and the journal id.
-* [ ] `markSettled` on an already settled trade affects no rows and fails.
+* [x] A locked read returns the current trade.
+* [x] An unknown id returns empty.
+* [x] `markSettled` sets the status and the journal id.
+* [x] `markSettled` on an already settled trade affects no rows and fails.
 
 Engineering log:
 
@@ -1165,13 +1165,13 @@ Ready for 3.4.2 when:
 
 ## 3.4.2 Add account resolution, locking and balance updates
 
-* [ ] Add `findIdByParticipantAndAsset(UUID participantId, UUID assetId)` to `AccountRepository`.
+* [x] Add `findIdByParticipantAndAsset(UUID participantId, UUID assetId)` to `AccountRepository`.
 
   * resolves one of the four affected accounts without locking
 
-* [ ] Add `findIdByAssetCode(String code)` or an `AssetRepository.findByCode(String)` lookup for the AUD cash asset.
+* [x] Add `findIdByAssetCode(String code)` or an `AssetRepository.findByCode(String)` lookup for the AUD cash asset.
 
-* [ ] Add `lockBalance(UUID accountId)`.
+* [x] Add `lockBalance(UUID accountId)`.
 
 ```sql
 SELECT id, asset_id, current_balance
@@ -1180,7 +1180,7 @@ WHERE id = :accountId
 FOR UPDATE
 ```
 
-* [ ] Add `applyDelta(UUID accountId, long delta)`.
+* [x] Add `applyDelta(UUID accountId, long delta)`.
 
 ```sql
 UPDATE account
@@ -1188,9 +1188,9 @@ SET current_balance = current_balance + :delta
 WHERE id = :accountId
 ```
 
-* [ ] Require exactly one updated row.
+* [x] Require exactly one updated row.
 
-* [ ] Do not add a method that sets a balance to an arbitrary value.
+* [x] Do not add a method that sets a balance to an arbitrary value.
 
 Why:
 
@@ -1201,13 +1201,13 @@ Why:
 
 Verification:
 
-* [ ] Account resolution finds the Alice/Bob AUD and EQ1 accounts.
-* [ ] An unknown participant/asset pair returns empty.
-* [ ] The AUD asset resolves by code.
-* [ ] A locked read returns the current balance.
-* [ ] `applyDelta` increases and decreases a balance.
-* [ ] `applyDelta` for an unknown account fails.
-* [ ] A delta that would make a balance negative is rejected by the database constraint.
+* [x] Account resolution finds the Alice/Bob AUD and EQ1 accounts.
+* [x] An unknown participant/asset pair returns empty.
+* [x] The AUD asset resolves by code.
+* [x] A locked read returns the current balance.
+* [x] `applyDelta` increases and decreases a balance.
+* [x] `applyDelta` for an unknown account fails.
+* [x] A delta that would make a balance negative is rejected by the database constraint.
 
 Engineering log:
 
@@ -1223,7 +1223,7 @@ Ready for 3.4.3 when:
 
 ## 3.4.3 Create the settlement journal repository
 
-* [ ] Create `SettlementJournalRepository`.
+* [x] Create `SettlementJournalRepository`.
 
 Required operations:
 
@@ -1235,16 +1235,16 @@ findJournalByTradeId(tradeId)
 findPostingsByJournalId(journalId)
 ```
 
-* [ ] Generate the journal UUID in Java and return the inserted row.
+* [x] Generate the journal UUID in Java and return the inserted row.
 
-* [ ] Insert the postings as one batch and require exactly four affected rows.
+* [x] Insert the postings as one batch and require exactly four affected rows.
 
-* [ ] Return postings in a deterministic order.
+* [x] Return postings in a deterministic order.
 
   * order by asset code, then direction, then account id
   * cash legs and security legs read as pairs during inspection
 
-* [ ] Do not add any update or delete operation.
+* [x] Do not add any update or delete operation.
 
 Why:
 
@@ -1254,11 +1254,11 @@ Why:
 
 Verification:
 
-* [ ] A journal can be inserted and read back by id and by trade id.
-* [ ] Four postings insert and read back in the expected order.
-* [ ] A second journal for the same trade fails.
-* [ ] `signedAmount` values are negative for debits and positive for credits.
-* [ ] The repository exposes no way to change or remove a committed journal or posting.
+* [x] A journal can be inserted and read back by id and by trade id.
+* [x] Four postings insert and read back in the expected order.
+* [x] A second journal for the same trade fails.
+* [x] `signedAmount` values are negative for debits and positive for credits.
+* [x] The repository exposes no way to change or remove a committed journal or posting.
 
 Engineering log:
 
@@ -1272,7 +1272,7 @@ Ready for 3.4.4 when:
 
 ## 3.4.4 Create the settlement attempt repository
 
-* [ ] Create `SettlementAttemptRepository`.
+* [x] Create `SettlementAttemptRepository`.
 
 Required operations:
 
@@ -1281,11 +1281,11 @@ insert(tradeId, commandKey, outcome, journalId, businessDate)
 findByTradeId(tradeId)
 ```
 
-* [ ] Generate the attempt UUID in Java.
+* [x] Generate the attempt UUID in Java.
 
-* [ ] Order attempts by `decided_at`, then id.
+* [x] Order attempts by `decided_at`, then id.
 
-* [ ] Do not add an update or delete operation.
+* [x] Do not add an update or delete operation.
 
 Why:
 
@@ -1294,11 +1294,11 @@ Why:
 
 Verification:
 
-* [ ] Each approved outcome can be recorded.
-* [ ] A rejection is recorded without a journal.
-* [ ] A settled attempt is recorded with its journal.
-* [ ] A second attempt for the same command key fails.
-* [ ] Attempts read back in decision order.
+* [x] Each approved outcome can be recorded.
+* [x] A rejection is recorded without a journal.
+* [x] A settled attempt is recorded with its journal.
+* [x] A second attempt for the same command key fails.
+* [x] Attempts read back in decision order.
 
 Engineering log:
 
@@ -1312,14 +1312,14 @@ Ready for 3.4.5 when:
 
 ## 3.4.5 Extend the command-result repository for settlement
 
-* [ ] Change `claim` to take the operation explicitly.
+* [x] Change `claim` to take the operation explicitly.
 
   * it currently hardcodes `CAPTURE_TRADE`
   * capture passes `CAPTURE_TRADE`, settlement passes `SETTLE_TRADE`
 
-* [ ] Keep `findByCommandKey` and the exact `finalize` behaviour unchanged.
+* [x] Keep `findByCommandKey` and the exact `finalize` behaviour unchanged.
 
-* [ ] Keep identity comparison as string equality against the stored `request_identity`.
+* [x] Keep identity comparison as string equality against the stored `request_identity`.
 
 Why:
 
@@ -1329,10 +1329,10 @@ Why:
 
 Verification:
 
-* [ ] A settlement key can be claimed with the settlement operation.
-* [ ] A duplicate key cannot create a second row.
-* [ ] A capture key reused for settlement is detected as a changed request.
-* [ ] Existing Phase 2 capture tests still pass unchanged in behaviour.
+* [x] A settlement key can be claimed with the settlement operation.
+* [x] A duplicate key cannot create a second row.
+* [x] A capture key reused for settlement is detected as a changed request.
+* [x] Existing Phase 2 capture tests still pass unchanged in behaviour.
 
 Engineering log:
 
@@ -1346,7 +1346,7 @@ Ready for 3.4.6 when:
 
 ## 3.4.6 Verify the settlement persistence layer
 
-* [ ] Add PostgreSQL integration tests for:
+* [x] Add PostgreSQL integration tests for:
 
   * trade locking and the settled transition
   * account resolution, locking and balance deltas
@@ -1354,11 +1354,11 @@ Ready for 3.4.6 when:
   * attempt insert/read
   * command claim with the settlement operation
 
-* [ ] Use the existing Testcontainers PostgreSQL 18.6 support and the shared cleanup.
+* [x] Use the existing Testcontainers PostgreSQL 18.6 support and the shared cleanup.
 
-* [ ] Keep each test independent.
+* [x] Keep each test independent.
 
-* [ ] Do not add concurrency tests here.
+* [x] Do not add concurrency tests here.
 
   * Two competing transactions belong to Phase 4.
   * Phase 3 only proves that the locking SQL exists, runs and returns the locked row.
@@ -1370,8 +1370,8 @@ Why:
 
 Verification:
 
-* [ ] All new persistence tests pass.
-* [ ] `./mvnw verify` passes.
+* [x] All new persistence tests pass.
+* [x] `./mvnw verify` passes.
 
 Engineering log:
 
@@ -1380,6 +1380,8 @@ Engineering log:
 Ready for 3.5 when:
 
 * every SQL operation settlement needs is implemented and independently tested
+
+Section 3.4 is complete. Do not begin Section 3.5 until requested.
 
 ---
 

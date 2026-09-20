@@ -74,6 +74,23 @@ class TradeRepositoryIntegrationTest extends AbstractPostgresIntegrationTest {
         assertThat(stored.terms().cashAmount()).isEqualTo(50000);
     }
 
+    @Test
+    void lockByIdReturnsTheCurrentTrade() {
+        Trade inserted = trades.insertIfAbsent(aliceBuysEq1("T-001", 10, 50000)).orElseThrow();
+
+        Trade locked = trades.lockById(inserted.id()).orElseThrow();
+
+        assertThat(locked).isEqualTo(inserted);
+        assertThat(locked.status()).isEqualTo(TradeStatus.READY);
+        assertThat(locked.journalId()).isNull();
+        assertThat(locked.terms()).isEqualTo(inserted.terms());
+    }
+
+    @Test
+    void lockByIdForUnknownIdReturnsEmpty() {
+        assertThat(trades.lockById(DemoSeed.UNKNOWN_ACCOUNT_ID)).isEmpty();
+    }
+
     private static TradeTerms aliceBuysEq1(String externalTradeId, long quantity, long cashAmount) {
         return new TradeTerms(
                 externalTradeId,

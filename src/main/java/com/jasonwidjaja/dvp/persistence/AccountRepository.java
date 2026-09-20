@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -37,6 +38,26 @@ public class AccountRepository {
 
     private static final String FIND_BY_ID_SQL = ACCOUNT_COLUMNS + " WHERE account.id = :accountId";
 
+    private static final String FIND_ID_BY_PARTICIPANT_AND_ASSET_SQL = """
+            SELECT id
+            FROM account
+            WHERE participant_id = :participantId
+              AND asset_id = :assetId
+            """;
+
+    private static final String LOCK_BALANCE_SQL = """
+            SELECT id, asset_id, current_balance
+            FROM account
+            WHERE id = :accountId
+            FOR UPDATE
+            """;
+
+    private static final String APPLY_DELTA_SQL = """
+            UPDATE account
+            SET current_balance = current_balance + :delta
+            WHERE id = :accountId
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
 
     public AccountRepository(NamedParameterJdbcTemplate jdbc) {
@@ -53,6 +74,37 @@ public class AccountRepository {
                 Map.of("accountId", accountId),
                 AccountRepository::mapAccount);
         return accounts.stream().findFirst();
+    }
+
+    public Optional<UUID> findIdByParticipantAndAsset(UUID participantId, UUID assetId) {
+        List<UUID> ids = jdbc.query(
+                FIND_ID_BY_PARTICIPANT_AND_ASSET_SQL,
+                Map.of("participantId", participantId, "assetId", assetId),
+                (rs, rowNum) -> rs.getObject("id", UUID.class));
+        return ids.stream().findFirst();
+    }
+
+    public Optional<LockedAccount> lockBalance(UUID accountId) {
+        List<LockedAccount> locked = jdbc.query(
+                LOCK_BALANCE_SQL,
+                Map.of("accountId", accountId),
+                (rs, rowNum) -> new LockedAccount(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("asset_id", UUID.class),
+                        rs.getLong("current_balance")));
+        return locked.stream().findFirst();
+    }
+
+    public void applyDelta(UUID accountId, long delta) {
+        int updated = jdbc.update(
+                APPLY_DELTA_SQL,
+                Map.of("accountId", accountId, "delta", delta));
+        if (updated != 1) {
+            throw new IncorrectResultSizeDataAccessException(
+                    "Expected to update exactly one account '" + accountId + "'",
+                    1,
+                    updated);
+        }
     }
 
     private static Account mapAccount(ResultSet rs, int rowNum) throws SQLException {

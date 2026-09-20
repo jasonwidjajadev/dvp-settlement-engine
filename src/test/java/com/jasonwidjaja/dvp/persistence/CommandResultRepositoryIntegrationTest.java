@@ -1,6 +1,7 @@
 package com.jasonwidjaja.dvp.persistence;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.dao.IncorrectResultSizeDataAccessException;
 
 import com.jasonwidjaja.dvp.domain.CaptureRequestIdentity;
 import com.jasonwidjaja.dvp.domain.CommandResult;
+import com.jasonwidjaja.dvp.domain.SettleRequestIdentity;
 import com.jasonwidjaja.dvp.domain.TradeTerms;
 import com.jasonwidjaja.dvp.support.AbstractPostgresIntegrationTest;
 import com.jasonwidjaja.dvp.support.DemoSeed;
@@ -24,7 +26,7 @@ class CommandResultRepositoryIntegrationTest extends AbstractPostgresIntegration
     void newKeyCanBeClaimed() {
         String identity = CaptureRequestIdentity.of(aliceBuysEq1(10));
 
-        assertThat(commandResults.claim("capture-T-001", identity)).isTrue();
+        assertThat(commandResults.claim("capture-T-001", CaptureRequestIdentity.OPERATION, identity)).isTrue();
 
         CommandResult stored = commandResults.findByCommandKey("capture-T-001").orElseThrow();
         assertThat(stored.commandKey()).isEqualTo("capture-T-001");
@@ -41,8 +43,8 @@ class CommandResultRepositoryIntegrationTest extends AbstractPostgresIntegration
         String firstIdentity = CaptureRequestIdentity.of(aliceBuysEq1(10));
         String changedIdentity = CaptureRequestIdentity.of(aliceBuysEq1(11));
 
-        assertThat(commandResults.claim("capture-T-001", firstIdentity)).isTrue();
-        assertThat(commandResults.claim("capture-T-001", changedIdentity)).isFalse();
+        assertThat(commandResults.claim("capture-T-001", CaptureRequestIdentity.OPERATION, firstIdentity)).isTrue();
+        assertThat(commandResults.claim("capture-T-001", CaptureRequestIdentity.OPERATION, changedIdentity)).isFalse();
 
         CommandResult stored = commandResults.findByCommandKey("capture-T-001").orElseThrow();
         assertThat(stored.hasRequestIdentity(firstIdentity)).isTrue();
@@ -53,7 +55,7 @@ class CommandResultRepositoryIntegrationTest extends AbstractPostgresIntegration
     @Test
     void completedResultCanBeReadAfterFinalize() {
         String identity = CaptureRequestIdentity.of(aliceBuysEq1(10));
-        assertThat(commandResults.claim("capture-T-001", identity)).isTrue();
+        assertThat(commandResults.claim("capture-T-001", CaptureRequestIdentity.OPERATION, identity)).isTrue();
         commandResults.finalize(
                 "capture-T-001",
                 201,
@@ -71,7 +73,7 @@ class CommandResultRepositoryIntegrationTest extends AbstractPostgresIntegration
     @Test
     void completedResultCannotBeReplaced() {
         String identity = CaptureRequestIdentity.of(aliceBuysEq1(10));
-        assertThat(commandResults.claim("capture-T-001", identity)).isTrue();
+        assertThat(commandResults.claim("capture-T-001", CaptureRequestIdentity.OPERATION, identity)).isTrue();
         commandResults.finalize("capture-T-001", 201, "{\"status\":\"READY\"}", "/v1/trades/8724");
 
         assertThatThrownBy(() -> commandResults.finalize("capture-T-001", 409, "{\"code\":\"CONFLICT\"}", null))
@@ -95,7 +97,7 @@ class CommandResultRepositoryIntegrationTest extends AbstractPostgresIntegration
     @Test
     void businessRejectionCanBeFinalizedWithoutALocation() {
         String identity = CaptureRequestIdentity.of(aliceBuysEq1(10));
-        assertThat(commandResults.claim("capture-unknown", identity)).isTrue();
+        assertThat(commandResults.claim("capture-unknown", CaptureRequestIdentity.OPERATION, identity)).isTrue();
         commandResults.finalize(
                 "capture-unknown",
                 422,
@@ -106,6 +108,35 @@ class CommandResultRepositoryIntegrationTest extends AbstractPostgresIntegration
         assertThat(stored.httpStatus()).isEqualTo(422);
         assertThat(stored.location()).isNull();
         assertThat(stored.completed()).isTrue();
+    }
+
+    @Test
+    void settlementKeyCanBeClaimedWithSettleTradeOperation() {
+        UUID tradeId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        String identity = SettleRequestIdentity.of(tradeId);
+
+        assertThat(commandResults.claim("settle-T-001", SettleRequestIdentity.OPERATION, identity)).isTrue();
+        assertThat(commandResults.claim("settle-T-001", SettleRequestIdentity.OPERATION, identity)).isFalse();
+
+        CommandResult stored = commandResults.findByCommandKey("settle-T-001").orElseThrow();
+        assertThat(stored.operation()).isEqualTo(SettleRequestIdentity.OPERATION);
+        assertThat(stored.hasRequestIdentity(identity)).isTrue();
+        assertThat(stored.completed()).isFalse();
+    }
+
+    @Test
+    void captureKeyReusedForSettlementIsAChangedRequest() {
+        String captureIdentity = CaptureRequestIdentity.of(aliceBuysEq1(10));
+        UUID tradeId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        String settleIdentity = SettleRequestIdentity.of(tradeId);
+
+        assertThat(commandResults.claim("shared-key", CaptureRequestIdentity.OPERATION, captureIdentity)).isTrue();
+        assertThat(commandResults.claim("shared-key", SettleRequestIdentity.OPERATION, settleIdentity)).isFalse();
+
+        CommandResult stored = commandResults.findByCommandKey("shared-key").orElseThrow();
+        assertThat(stored.operation()).isEqualTo(CaptureRequestIdentity.OPERATION);
+        assertThat(stored.hasRequestIdentity(captureIdentity)).isTrue();
+        assertThat(stored.hasRequestIdentity(settleIdentity)).isFalse();
     }
 
     private static TradeTerms aliceBuysEq1(long quantity) {

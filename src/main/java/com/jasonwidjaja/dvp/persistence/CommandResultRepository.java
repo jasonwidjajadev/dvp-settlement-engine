@@ -11,7 +11,6 @@ import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-import com.jasonwidjaja.dvp.domain.CaptureRequestIdentity;
 import com.jasonwidjaja.dvp.domain.CommandResult;
 
 @Repository
@@ -58,12 +57,12 @@ public class CommandResultRepository {
         this.jdbc = jdbc;
     }
 
-    public boolean claim(String commandKey, String requestIdentity) {
+    public boolean claim(String commandKey, String operation, String requestIdentity) {
         int inserted = jdbc.update(
                 CLAIM_SQL,
                 Map.of(
                         "commandKey", commandKey,
-                        "operation", CaptureRequestIdentity.OPERATION,
+                        "operation", operation,
                         "requestIdentity", requestIdentity));
         return inserted == 1;
     }
