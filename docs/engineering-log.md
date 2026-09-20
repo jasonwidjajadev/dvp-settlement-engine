@@ -1326,29 +1326,83 @@ Business rejection codes:
 - No REST controllers were added.
 - Stopped here. Section 2.6 was not started.
 
-Section 2.5 is clean. Section 2.6 was not started.
+## 2.6 Trade Capture REST API
 
-**Error codes** now match the public API names:
+### 2.6.1 Create `POST /v1/trades`
 
-| Temporary | Final |
-| --- | --- |
-| `IDEMPOTENCY_CONFLICT` | `IDEMPOTENCY_KEY_CONFLICT` |
-| `TRADE_CONFLICT` | `TRADE_REFERENCE_CONFLICT` |
-| `NOT_A_SECURITY` | `INVALID_SECURITY` |
+- Added `TradeController`.
+  - `POST /v1/trades` requires `Content-Type: application/json` and exactly one `Idempotency-Key`.
+  - Validates `CaptureTradeRequest`.
+  - Maps the request to `TradeTerms` + `CaptureCommand`.
+  - Calls `CaptureTradeService` and returns its status, stored JSON body, and `Location` when present.
+- Controller does not contain SQL, transaction management, participant/security checks, or command-result persistence.
+- `IdempotencyKey.requireExactlyOne` enforces C3: exactly one header, 1–128 characters, no surrounding whitespace via `String.strip()`. The key is not trimmed.
 
-Unchanged: `UNKNOWN_PARTICIPANT`, `UNKNOWN_SECURITY`, `SELF_TRADE`. Service tests use the final names. The original 2.5 log entries still record the temporary names; a correction entry was appended.
+### 2.6.2 Create `GET /v1/trades/{id}`
 
-**Failure injection** is out of production. `CaptureTradeService` no longer has `failOnceAfterTradeInsert`. Capture still uses `TransactionTemplate` and the same sequence: claim → validate → `insertIfAbsent` → finalize.
+- Added `GET /v1/trades/{id}` on `TradeController`.
+- Reads the current stored trade through `TradeRepository.findById`.
+- Returns `TradeResponse` when found.
+- Valid unknown UUID → `404` `UNKNOWN_TRADE`.
+- Malformed UUID → `400` `INVALID_REQUEST`.
+- HTTP test captured a trade, followed `Location`, and compared every stored term.
 
-Rollback is proven by a test-only `@Primary` `TradeRepository` decorator that inserts, then throws once before finalize. After that failure: no trade, no command claim, balances unchanged. Retrying the same command then returns `201` once.
+### 2.6.3 Create `GET /v1/accounts`
 
-The first decorator was `private final`, so Spring could not CGLIB-proxy the `@Repository` subclass. Making it package-visible and non-final fixed that.
+- Added `AccountController`.
+- `GET /v1/accounts` returns `AccountResponse` rows from `AccountRepository.findAll()`.
+- Does not seed data, create accounts, or update balances.
+- HTTP test: GET accounts, capture T-001, GET accounts again.
+  - Alice AUD 100000/100000, Alice EQ1 0/0, Bob AUD 0/0, Bob EQ1 10/10 before and after.
 
-**Verification**
+### 2.6.4 Add API error handling
 
-- `CaptureTradeServiceIntegrationTest` + `CaptureTradeRollbackIntegrationTest` passed after the decorator fix
-- `./mvnw verify`: **BUILD SUCCESS**, 80 tests, 0 failures, 0 errors, 0 skipped
-- No REST controllers or other 2.6 work were added
+- Added `ApiExceptionHandler` as the single MVC `@RestControllerAdvice`.
+- Request-level error body remains `{code,message}`.
+
+| Situation | Status | Code |
+| --- | --- | --- |
+| missing / empty / oversized / duplicate `Idempotency-Key` | `400` | `INVALID_IDEMPOTENCY_KEY` |
+| surrounding whitespace on the key | `400` | `INVALID_IDEMPOTENCY_KEY` |
+| malformed JSON or invalid JSON value | `400` | `MALFORMED_REQUEST` |
+| Bean Validation or malformed path UUID | `400` | `INVALID_REQUEST` |
+| unsupported media type | `415` | `UNSUPPORTED_MEDIA_TYPE` |
+| unknown trade | `404` | `UNKNOWN_TRADE` |
+| unexpected failure | `500` | `INTERNAL_ERROR` |
+
+- Service outcomes are unchanged: `201`/`200`, `409` `IDEMPOTENCY_KEY_CONFLICT` / `TRADE_REFERENCE_CONFLICT`, `422` business codes.
+- Messages never include SQL, credentials, or exception types.
+- Unexpected framework behaviour:
+  - Tomcat / HTTP optional whitespace removes ordinary leading/trailing spaces and tabs from `Idempotency-Key` before the controller sees the value.
+  - First HTTP test sent `" capture-T-001"` and received `201` because the header arrived as `capture-T-001`.
+  - Surrounding-whitespace rejection is therefore proven by `IdempotencyKeyTest`, not by sending spaces through HTTP.
+  - `String.strip()` does not treat NBSP as whitespace, matching `NoSurroundingWhitespace` / `Character.isWhitespace`.
+
+### 2.6.5 Verify the HTTP workflow
+
+- `TradeCaptureHttpIntegrationTest` against Testcontainers PostgreSQL 18.6 and a live Tomcat port.
+  - POST valid Alice/Bob/EQ1 → `201`, `READY`, `Location /v1/trades/{id}`.
+  - GET Location returns the same terms.
+  - GET accounts before and after: balances unchanged.
+  - Same POST replayed: one trade, same body, durable `201`.
+  - New key + same terms → `200`.
+  - Same key + changed quantity → `409` `IDEMPOTENCY_KEY_CONFLICT`.
+  - New key + different terms → `409` `TRADE_REFERENCE_CONFLICT`.
+  - Unknown buyer → durable `422` `UNKNOWN_PARTICIPANT`.
+  - Self-trade → `422` `SELF_TRADE`.
+  - Request-level `400`/`415` do not write `command_result` or `trade`.
+- `CaptureTradeInternalErrorHttpTest` mocks `CaptureTradeService` to throw a PostgreSQL/password message.
+  - HTTP returns `500` `INTERNAL_ERROR` / `An unexpected error occurred`.
+- `DvpApplicationTests` now expects `tradeController` and `accountController`.
+
+- Ran `TradeCaptureHttpIntegrationTest`, `CaptureTradeInternalErrorHttpTest`, `IdempotencyKeyTest`.
+  - First HTTP run failed: space-prefixed `Idempotency-Key` became a valid key after Tomcat trimming.
+  - After moving whitespace proof to `IdempotencyKeyTest` and dropping NBSP (not Java whitespace): passed.
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 94. Failures: 0. Errors: 0. Skipped: 0.
+- No settlement, journal, or Section 2.7 walkthrough was added.
+- Stopped here. Section 2.7 was not started.
 
 
 
