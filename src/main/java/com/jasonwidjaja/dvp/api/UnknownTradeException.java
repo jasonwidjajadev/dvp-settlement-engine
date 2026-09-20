@@ -1,8 +1,8 @@
 package com.jasonwidjaja.dvp.api;
 
-class UnknownTradeException extends RuntimeException {
+public class UnknownTradeException extends RuntimeException {
 
-    UnknownTradeException() {
+    public UnknownTradeException() {
         super("Trade does not exist");
     }
 }

@@ -1976,6 +1976,77 @@ Deviations and corrections:
 - Section 3.4 is complete.
 - Stopped here. Section 3.5 was not started.
 
+## 3.5 Settlement transaction, locking and validation
+
+`SettleTradeService` owns the settlement PostgreSQL transaction through `TransactionTemplate` and the existing Spring JDBC `PlatformTransactionManager`. Isolation is the default. No settlement controller was added. Successful settlement journal, posting, balance and `SETTLED` writes were not added.
+
+### 3.5.1 Service-owned settlement transaction boundary
+
+- Added `SettleTradeService` in the application package.
+  - Injects the same `PlatformTransactionManager` used by capture.
+  - Wraps settlement in `TransactionTemplate`.
+  - Does not set a non-default isolation level. Correctness is row locking (ADR-007).
+- Repositories used inside the transaction: `CommandResultRepository`, `TradeRepository`, `AccountRepository`, `AssetRepository`, `SettlementAttemptRepository`.
+- `SettlementJournalRepository` is not injected. Journal writes belong to 3.6.
+- Added `TimeConfiguration` with one `Clock` bean: `Clock.system(Australia/Sydney)`.
+- Added `BusinessCalendar` which derives `businessDate()` as `LocalDate.now(clock)`. Settlement code does not call `LocalDate.now()` directly.
+
+### 3.5.2 Settlement command claim and replay
+
+- First step inside the transaction: `SettleRequestIdentity.of(tradeId)` then `claim(key, SETTLE_TRADE, identity)`.
+- Trade is not read or locked before the claim.
+- Replay:
+  - same identity + completed result → return stored status, body and location; write nothing
+  - same identity + unfinished result → `IllegalStateException`
+  - different identity → `409 IDEMPOTENCY_KEY_CONFLICT`; original row unchanged; no attempt
+
+### 3.5.3 Trade lock, state check and due-date rule
+
+- After a successful claim, `lockById`.
+- Unknown trade → `UnknownTradeException` (existing handler maps this to `404 UNKNOWN_TRADE`). Claim rolls back. No attempt.
+- Locked `SETTLED` trade → `409 ALREADY_SETTLED` attempt linked to the existing journal. No balance change.
+- C2: due when `settlementDate <= businessDate`. Overdue remains settleable. `businessDate` is stored on every committed attempt.
+- Future-dated trade → `422 NOT_DUE`, trade stays `READY`.
+
+### 3.5.4 Four-account resolution
+
+- Cash asset: `AssetRepository.findByCode("AUD")` and type `CASH`.
+- Four ids without locking: buyer+AUD, seller+AUD, buyer+security, seller+security.
+- Distinctness asserted (`HashSet` size 4).
+- Missing required account → `SettlementIntegrityException`. Transaction rolls back. No attempt. No durable command result. Existing `Exception` handler will surface `500 INTERNAL_ERROR`. `MISSING_ACCOUNT` is not recorded.
+
+### 3.5.5 Deterministic account locking
+
+- Sort the four ids with `UUID::compareTo`.
+- Lock one at a time with `lockBalance`. No `ORDER BY ... FOR UPDATE`.
+- Observed Alice/Bob lock order: trade, then `...0aa` Alice AUD, `...0ae` Alice EQ1, `...0ba` Bob AUD, `...0be` Bob EQ1.
+- Resolve events are recorded before any account lock.
+- No Java `synchronized` / `Lock` on the settlement path.
+- Competing-transaction behaviour is left to Phase 4.
+
+### 3.5.6 Post-lock cash and securities validation
+
+- Buyer cash first: locked `currentBalance >= cashAmount`.
+- Then seller securities: locked `currentBalance >= quantity`.
+- Both insufficient → `INSUFFICIENT_CASH`.
+- Rejections commit an attempt + durable `422`, leave the trade `READY`, and change no balances, journals or postings.
+- No reservations.
+- A due, sufficiently funded trade reaches this point and then throws `SuccessfulSettlementNotImplementedException`, rolling the claim back. Journal/posting/balance/`SETTLED` writes belong to 3.6.
+
+Deviations and corrections:
+
+- Valid due/overdue/exactly-sufficient trades are not persisted as `SETTLED` in this section. Tests prove they are not rejected as `NOT_DUE` / `INSUFFICIENT_*` and that they reach the 3.6 write boundary.
+- `SettlementJournalRepository` is omitted from the service until 3.6.
+- First `./mvnw verify` failed to start the new Spring test contexts: a test `@Bean Clock clock()` collided with production bean name `clock` (`BeanDefinitionOverrideException`). Renamed the test bean to `fixedClock` and marked it `@Primary`. Re-ran verify.
+- `UnknownTradeException` was made public so the application service can throw the same type the existing HTTP handler already maps to `404`.
+
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 179. Failures: 0. Errors: 0. Skipped: 0.
+- Section 3.5 is complete.
+- Stopped here. Section 3.6 was not started.
+
+
 
 
 

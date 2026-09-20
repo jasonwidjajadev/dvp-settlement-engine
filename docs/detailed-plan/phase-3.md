@@ -1419,15 +1419,15 @@ If a technical failure happens before commit:
 none of it remains
 ```
 
-* [ ] Create `SettleTradeService` in the application package.
+* [x] Create `SettleTradeService` in the application package.
 
-* [ ] Give the service ownership of the settlement transaction.
+* [x] Give the service ownership of the settlement transaction.
 
-* [ ] Use `TransactionTemplate` over the same `PlatformTransactionManager` and `DataSource` the repositories use.
+* [x] Use `TransactionTemplate` over the same `PlatformTransactionManager` and `DataSource` the repositories use.
 
-* [ ] Keep the controller outside the transaction.
+* [x] Keep the controller outside the transaction.
 
-* [ ] Return the outcome only after the transaction completes successfully.
+* [x] Return the outcome only after the transaction completes successfully.
 
 Conceptually:
 
@@ -1447,11 +1447,11 @@ TransactionTemplate
 COMMIT / ROLLBACK
 ```
 
-* [ ] Use the default isolation level.
+* [x] Use the default isolation level.
 
   * The correctness argument is explicit row locking, not a higher isolation level (ADR-007).
 
-* [ ] Inject the `BusinessCalendar` from 3.1.2 rather than reading the system clock inline.
+* [x] Inject the `BusinessCalendar` from 3.1.2 rather than reading the system clock inline.
 
 Why:
 
@@ -1461,9 +1461,9 @@ Why:
 
 Verification:
 
-* [ ] The service uses the expected transaction manager and data source.
-* [ ] Repository operations participate in the service transaction.
-* [ ] A technical exception rolls the transaction back.
+* [x] The service uses the expected transaction manager and data source.
+* [x] Repository operations participate in the service transaction.
+* [x] A technical exception rolls the transaction back.
 
 Engineering log:
 
@@ -1478,11 +1478,11 @@ Ready for 3.5.2 when:
 
 ## 3.5.2 Claim the settlement command and replay stored outcomes
 
-* [ ] As the first step inside the transaction, build the settle request identity and claim the key.
+* [x] As the first step inside the transaction, build the settle request identity and claim the key.
 
-* [ ] If the claim succeeded, continue with a new decision.
+* [x] If the claim succeeded, continue with a new decision.
 
-* [ ] If the key already exists:
+* [x] If the key already exists:
 
   * same request identity and a completed result
 
@@ -1499,7 +1499,7 @@ Ready for 3.5.2 when:
     * do not overwrite the stored result
     * record no attempt
 
-* [ ] Do not read or lock the trade before the claim.
+* [x] Do not read or lock the trade before the claim.
 
 Why:
 
@@ -1509,10 +1509,10 @@ Why:
 
 Verification:
 
-* [ ] A new key is claimed once.
-* [ ] A replay with the same key and trade returns the original outcome and writes nothing.
-* [ ] The same key against a different trade returns the approved conflict.
-* [ ] No settlement attempt is recorded on either replay path.
+* [x] A new key is claimed once.
+* [x] A replay with the same key and trade returns the original outcome and writes nothing.
+* [x] The same key against a different trade returns the approved conflict.
+* [x] No settlement attempt is recorded on either replay path.
 
 Engineering log:
 
@@ -1526,31 +1526,31 @@ Ready for 3.5.3 when:
 
 ## 3.5.3 Lock the trade and check state and due date
 
-* [ ] Lock the trade with `lockById`.
+* [x] Lock the trade with `lockById`.
 
-* [ ] If the trade does not exist:
+* [x] If the trade does not exist:
 
   * throw so the transaction rolls back
   * the API returns `404 UNKNOWN_TRADE`
   * no command claim is committed
 
-* [ ] If the locked trade is already `SETTLED`:
+* [x] If the locked trade is already `SETTLED`:
 
   * record an `ALREADY_SETTLED` attempt linked to the existing journal
   * finalize `409 ALREADY_SETTLED`
   * commit the decision
   * change no balances
 
-* [ ] Compute the business date from the injected calendar.
+* [x] Compute the business date from the injected calendar.
 
-* [ ] If `settlementDate > businessDate`:
+* [x] If `settlementDate > businessDate`:
 
   * record a `NOT_DUE` attempt with the evaluated business date
   * finalize `422 NOT_DUE`
   * commit the decision
   * leave the trade `READY`
 
-* [ ] Make every state decision from the locked row.
+* [x] Make every state decision from the locked row.
 
 Why:
 
@@ -1561,11 +1561,11 @@ Why:
 
 Verification:
 
-* [ ] A settled trade produces the approved conflict, an `ALREADY_SETTLED` attempt and no balance change.
-* [ ] A future-dated trade produces `NOT_DUE`, stays `READY` and changes no balance.
-* [ ] A trade dated today settles.
-* [ ] An overdue trade settles.
-* [ ] An unknown trade returns `404` and leaves no `command_result` row.
+* [x] A settled trade produces the approved conflict, an `ALREADY_SETTLED` attempt and no balance change.
+* [x] A future-dated trade produces `NOT_DUE`, stays `READY` and changes no balance.
+* [x] A trade dated today settles.
+* [x] An overdue trade settles.
+* [x] An unknown trade returns `404` and leaves no `command_result` row.
 
 Engineering log:
 
@@ -1589,13 +1589,13 @@ buyer  security  = buyer  + trade.security
 seller security  = seller + trade.security
 ```
 
-* [ ] Resolve the AUD cash asset using the approved rule.
+* [x] Resolve the AUD cash asset using the approved rule.
 
-* [ ] Resolve the four account ids without locking them.
+* [x] Resolve the four account ids without locking them.
 
-* [ ] Assert the four resolved ids are distinct.
+* [x] Assert the four resolved ids are distinct.
 
-* [ ] If any account does not exist:
+* [x] If any account does not exist:
 
   * do not record a settlement attempt
   * do not finalize a durable command result
@@ -1611,9 +1611,9 @@ Why:
 
 Verification:
 
-* [ ] The Alice/Bob trade resolves to the four seeded accounts.
-* [ ] A trade whose buyer has no AUD account rolls back with a safe `500 INTERNAL_ERROR`, no settlement attempt, and no durable command result.
-* [ ] The resolution step performs no locking and no writes.
+* [x] The Alice/Bob trade resolves to the four seeded accounts.
+* [x] A trade whose buyer has no AUD account rolls back with a safe `500 INTERNAL_ERROR`, no settlement attempt, and no durable command result.
+* [x] The resolution step performs no locking and no writes.
 
 Engineering log:
 
@@ -1628,21 +1628,21 @@ Ready for 3.5.5 when:
 
 ## 3.5.5 Lock the four accounts in deterministic account-ID order
 
-* [ ] Sort the four account ids ascending.
+* [x] Sort the four account ids ascending.
 
-* [ ] Lock them one at a time, in that order, with `lockBalance`.
+* [x] Lock them one at a time, in that order, with `lockBalance`.
 
-* [ ] Hold the locks until the transaction ends.
+* [x] Hold the locks until the transaction ends.
 
   * There is no unlock step. Transaction completion releases them.
 
-* [ ] Use the balances returned by the locking reads.
+* [x] Use the balances returned by the locking reads.
 
-* [ ] Do not use the single-statement `ORDER BY ... FOR UPDATE` form.
+* [x] Do not use the single-statement `ORDER BY ... FOR UPDATE` form.
 
   * Four explicit statements make the lock order visible in the code and independent of query planning.
 
-* [ ] Do not add any Java-level lock, synchronized block or in-process mutex.
+* [x] Do not add any Java-level lock, synchronized block or in-process mutex.
 
 Why:
 
@@ -1653,10 +1653,10 @@ Why:
 
 Verification:
 
-* [ ] The service locks the trade first, then the four accounts ascending by id.
-* [ ] A test asserts the recorded lock order for a known trade.
-* [ ] No Java locking primitive appears in the settlement path.
-* [ ] Concurrency behaviour under competing transactions is deliberately left to Phase 4.
+* [x] The service locks the trade first, then the four accounts ascending by id.
+* [x] A test asserts the recorded lock order for a known trade.
+* [x] No Java locking primitive appears in the settlement path.
+* [x] Concurrency behaviour under competing transactions is deliberately left to Phase 4.
 
 Engineering log:
 
@@ -1671,39 +1671,39 @@ Ready for 3.5.6 when:
 
 ## 3.5.6 Validate cash and securities only after the locks are held
 
-* [ ] Validate after locking, never before.
+* [x] Validate after locking, never before.
 
-* [ ] Check buyer cash first.
+* [x] Check buyer cash first.
 
 ```text
 buyer cash current_balance >= trade.cash_amount
 ```
 
-* [ ] Then check seller securities.
+* [x] Then check seller securities.
 
 ```text
 seller security current_balance >= trade.quantity
 ```
 
-* [ ] On insufficient cash:
+* [x] On insufficient cash:
 
   * record an `INSUFFICIENT_CASH` attempt
   * finalize `422 INSUFFICIENT_CASH`
   * commit the decision
   * leave the trade `READY` and every balance unchanged
 
-* [ ] On insufficient securities:
+* [x] On insufficient securities:
 
   * record an `INSUFFICIENT_SECURITIES` attempt
   * finalize `422 INSUFFICIENT_SECURITIES`
   * commit the decision
   * leave the trade `READY` and every balance unchanged
 
-* [ ] If both are insufficient, report `INSUFFICIENT_CASH`.
+* [x] If both are insufficient, report `INSUFFICIENT_CASH`.
 
   * A fixed evaluation order makes the recorded decision deterministic.
 
-* [ ] Do not reserve, hold or partially apply anything.
+* [x] Do not reserve, hold or partially apply anything.
 
 Why:
 
@@ -1713,11 +1713,11 @@ Why:
 
 Verification:
 
-* [ ] A buyer with insufficient cash produces `INSUFFICIENT_CASH`, no postings, no journal, unchanged balances and a `READY` trade.
-* [ ] A seller with insufficient securities produces `INSUFFICIENT_SECURITIES` with the same guarantees.
-* [ ] Both insufficient produces `INSUFFICIENT_CASH`.
-* [ ] An exactly sufficient balance settles.
-* [ ] Validation is proven to read the post-lock balance.
+* [x] A buyer with insufficient cash produces `INSUFFICIENT_CASH`, no postings, no journal, unchanged balances and a `READY` trade.
+* [x] A seller with insufficient securities produces `INSUFFICIENT_SECURITIES` with the same guarantees.
+* [x] Both insufficient produces `INSUFFICIENT_CASH`.
+* [x] An exactly sufficient balance settles.
+* [x] Validation is proven to read the post-lock balance.
 
 Engineering log:
 
@@ -1728,6 +1728,8 @@ Ready for 3.6 when:
 
 * every rejection path commits a decision with no financial movement
 * a valid settlement is ready to be written
+
+Section 3.5 is complete. Do not begin Section 3.6 until requested.
 
 ---
 
