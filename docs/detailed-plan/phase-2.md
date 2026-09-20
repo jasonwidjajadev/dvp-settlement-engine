@@ -62,6 +62,15 @@ Phase 2 does not implement:
 
 Do not begin Phase 3 automatically.
 
+
+* 2.1: Decide the exact Trade Capture rules before writing code, including valid trade values, duplicate-trade behaviour, idempotency, and durable error/result behaviour.
+* 2.2: Create the Java domain objects and API request/response types that represent a captured trade and validate incoming data.
+* 2.3: Add the PostgreSQL schema for storing trades and durable idempotency command results using Flyway V2.
+* 2.4: Add the Spring JDBC repositories that let Java read participants/assets and store/read trades and command results.
+* 2.5: Combine those repositories into one atomic Trade Capture operation so the trade and its durable result commit or roll back together.
+* 2.6: Expose Trade Capture and read-back through REST endpoints: create trade, get trade, and inspect accounts.
+* 2.7: Verify the whole Phase 2 flow end to end, confirm retries are safe and balances stay unchanged, then stop before settlement.
+
 ---
 
 # 2.1 Confirm Phase 1 and approve the Trade Capture contract

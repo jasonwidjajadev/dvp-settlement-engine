@@ -1228,7 +1228,127 @@ Failures encountered:
 - Still no `CaptureTradeService` or capture HTTP API.
 - Stopped here. Section 2.5 was not started.
 
+## 2.5 Atomic Trade Capture service
 
+### 2.5.1 Create the service-owned transaction boundary
+
+- Added `com.jasonwidjaja.dvp.application.CaptureTradeService`.
+- The service owns the Trade Capture transaction.
+  - Injects the Spring JDBC `PlatformTransactionManager` for the application `DataSource`.
+  - Wraps capture in `TransactionTemplate`.
+  - Confirmed at runtime: `JdbcTransactionManager` on the same `DataSource` used by the repositories.
+- The controller is not present. The service returns `CommandOutcome` only after the callback completes (commit on success, rollback on thrown failure).
+- First attempt used `@ConditionalOnBean(PlatformTransactionManager.class)`. The service bean was not created in the integration tests. The condition was removed. `DvpApplicationTests` now mocks `PlatformTransactionManager` because that test excludes the DataSource.
+
+### 2.5.2 Implement the capture sequence
+
+- Added `CommandOutcome` (`httpStatus`, `responseBody`, `location`).
+- Sequence inside the transaction:
+  1. Claim the command key with `CaptureRequestIdentity.of(terms)`.
+  2. Existing key + same identity → replay the stored outcome.
+  3. Existing key + different identity → `409` `IDEMPOTENCY_CONFLICT`; stored result unchanged.
+  4. New key: buyer ≠ seller, buyer exists, seller exists, security exists, asset type is `SECURITY`.
+  5. Business failure → no trade, finalize `422`, commit.
+  6. `insertIfAbsent`; new row → `201` + Location `/v1/trades/{id}`.
+  7. Existing row + same terms → `200` + same Location.
+  8. Existing row + different terms → `409` `TRADE_CONFLICT`; original trade unchanged.
+- Response bodies are `TradeResponse` or `ErrorResponse` JSON (`code`, `message`).
+- No sufficiency checks, reservations, balance updates, account locks, journals, or `SETTLED`.
+
+Business rejection codes:
+
+| Case | Code |
+| --- | --- |
+| buyer or seller missing | `UNKNOWN_PARTICIPANT` |
+| security missing | `UNKNOWN_SECURITY` |
+| cash asset used as security | `NOT_A_SECURITY` |
+| buyer = seller | `SELF_TRADE` |
+
+### 2.5.3 Verify Trade Capture behaviour
+
+- `CaptureTradeServiceIntegrationTest` against Testcontainers PostgreSQL 18.6.
+
+| Case | Result |
+| --- | --- |
+| valid Alice/Bob/EQ1 | `201`, `READY`, one trade, one command result, balances unchanged |
+| same key + same request | replayed outcome, no second trade or command row |
+| same key + changed quantity | `409` `IDEMPOTENCY_CONFLICT`, original 201 and trade unchanged |
+| new key + same terms | `200`, same trade id, second command result |
+| new key + different terms | `409` `TRADE_CONFLICT`, original quantity 10 |
+| unknown buyer/seller/security, AUD as security, self-trade | `422`, no trade; unknown buyer replay is durable |
+
+### 2.5.4 Prove capture rollback
+
+- Test-only hook: `failOnceAfterTradeInsert` throws after a successful insert and before finalize. Not a product API.
+- Injected `IllegalStateException("forced capture failure")`.
+- After the service call ended (no outer test transaction):
+  - trade `T-001` absent
+  - command key `capture-T-001` absent
+  - Phase 1 balances unchanged
+- Retry of the same command then returned `201` once.
+- Observed in `CaptureTradeRollbackIntegrationTest`.
+
+- Ran `./mvnw verify`.
+  - First run failed: service missing because of `@ConditionalOnBean`.
+  - After removing the condition: `BUILD SUCCESS`.
+  - Tests run: 80. Failures: 0. Errors: 0. Skipped: 0.
+
+- No REST controllers were added.
+- Ready for Section 2.6.
+- Stopped here. Section 2.6 was not started.
+
+### 2.5 correction: error codes and test-only rollback failure
+
+- Final Phase 2 error-code names, before the public HTTP API:
+  - `IDEMPOTENCY_CONFLICT` → `IDEMPOTENCY_KEY_CONFLICT`
+  - `TRADE_CONFLICT` → `TRADE_REFERENCE_CONFLICT`
+  - `NOT_A_SECURITY` → `INVALID_SECURITY`
+  - Unchanged: `UNKNOWN_PARTICIPANT`, `UNKNOWN_SECURITY`, `SELF_TRADE`
+- Removed `failOnceAfterTradeInsert` and the production failure field from `CaptureTradeService`.
+  - Production capture sequence is unchanged: claim, validate, insert-if-absent, finalize.
+  - `TransactionTemplate` is still the capture boundary.
+- Rollback proof now uses a test-only `@Primary` `TradeRepository` decorator in `CaptureTradeRollbackIntegrationTest`.
+  - `insertIfAbsent` performs the real insert, then throws once before the service can finalize.
+  - After the thrown failure: no trade, no command claim, balances unchanged.
+  - Retry of the same command then returns `201` once.
+- First decorator attempt used a `private final` nested class.
+  - Spring could not CGLIB-proxy the `@Repository` subclass.
+  - Context failed to load.
+  - Fixed by making the decorator package-visible and non-final.
+- Updated `CaptureTradeServiceIntegrationTest` assertions to the final codes.
+
+- Ran `CaptureTradeServiceIntegrationTest` and `CaptureTradeRollbackIntegrationTest`.
+  - First run: rollback context failed (`private final` decorator).
+  - After the visibility fix: passed. Failures: 0. Errors: 0. Skipped: 0.
+- Ran `./mvnw verify`.
+  - Result: `BUILD SUCCESS`.
+  - Tests run: 80. Failures: 0. Errors: 0. Skipped: 0.
+- No REST controllers were added.
+- Stopped here. Section 2.6 was not started.
+
+Section 2.5 is clean. Section 2.6 was not started.
+
+**Error codes** now match the public API names:
+
+| Temporary | Final |
+| --- | --- |
+| `IDEMPOTENCY_CONFLICT` | `IDEMPOTENCY_KEY_CONFLICT` |
+| `TRADE_CONFLICT` | `TRADE_REFERENCE_CONFLICT` |
+| `NOT_A_SECURITY` | `INVALID_SECURITY` |
+
+Unchanged: `UNKNOWN_PARTICIPANT`, `UNKNOWN_SECURITY`, `SELF_TRADE`. Service tests use the final names. The original 2.5 log entries still record the temporary names; a correction entry was appended.
+
+**Failure injection** is out of production. `CaptureTradeService` no longer has `failOnceAfterTradeInsert`. Capture still uses `TransactionTemplate` and the same sequence: claim → validate → `insertIfAbsent` → finalize.
+
+Rollback is proven by a test-only `@Primary` `TradeRepository` decorator that inserts, then throws once before finalize. After that failure: no trade, no command claim, balances unchanged. Retrying the same command then returns `201` once.
+
+The first decorator was `private final`, so Spring could not CGLIB-proxy the `@Repository` subclass. Making it package-visible and non-final fixed that.
+
+**Verification**
+
+- `CaptureTradeServiceIntegrationTest` + `CaptureTradeRollbackIntegrationTest` passed after the decorator fix
+- `./mvnw verify`: **BUILD SUCCESS**, 80 tests, 0 failures, 0 errors, 0 skipped
+- No REST controllers or other 2.6 work were added
 
 
 
